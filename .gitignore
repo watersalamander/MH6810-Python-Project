@@ -1,0 +1,22 @@
+# virtual environments
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Office lock files
+~$*.docx
+~$*.pptx
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# DrivenData competition data: not redistributable, download it yourself (see data/README.md)
+data/*.csv
