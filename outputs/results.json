@@ -10,7 +10,8 @@
     "cv": "StratifiedKFold(n_splits=5, shuffle=True, random_state=42)",
     "solver": "lbfgs",
     "max_iter": 5000,
-    "runtime_minutes": 24.1
+    "n_jobs": 2,
+    "runtime_minutes": 59.4
   },
   "data": {
     "n_train_rows": 260601,
@@ -350,7 +351,7 @@
         "max_n_iter": 337.0
       }
     ],
-    "time_s": 674.4796507358551,
+    "time_s": 707.8256628513336,
     "refit_n_iter": 224
   },
   "convergence": {
@@ -429,8 +430,8 @@
         ]
       },
       "max_n_iter": 0,
-      "fit_time_s": 0.15837492942810058,
-      "wall_time_s": 15.671647787094116
+      "fit_time_s": 0.09620862007141114,
+      "wall_time_s": 8.290406703948975
     },
     "E1": {
       "description": "Logistic regression, structural features only",
@@ -502,8 +503,8 @@
         ]
       },
       "max_n_iter": 143,
-      "fit_time_s": 10.393694925308228,
-      "wall_time_s": 31.554250955581665
+      "fit_time_s": 11.329039144515992,
+      "wall_time_s": 33.298821449279785
     },
     "E2": {
       "description": "E1 + one-hot geo_level_1_id",
@@ -575,8 +576,8 @@
         ]
       },
       "max_n_iter": 162,
-      "fit_time_s": 13.598427152633667,
-      "wall_time_s": 40.0606472492218
+      "fit_time_s": 13.798860359191895,
+      "wall_time_s": 41.10138010978699
     },
     "E3": {
       "description": "E2 + target-encoded geo_level_2/3_id",
@@ -648,8 +649,8 @@
         ]
       },
       "max_n_iter": 258,
-      "fit_time_s": 23.94822516441345,
-      "wall_time_s": 69.48580026626587
+      "fit_time_s": 22.913071203231812,
+      "wall_time_s": 67.20344138145447
     },
     "E4": {
       "description": "E3 + engineered features (floors_x_log_age)",
@@ -723,8 +724,8 @@
         ]
       },
       "max_n_iter": 292,
-      "fit_time_s": 28.433054065704347,
-      "wall_time_s": 80.85873246192932
+      "fit_time_s": 53.312637615203855,
+      "wall_time_s": 142.08999943733215
     },
     "E5": {
       "description": "E4 with class_weight='balanced'",
@@ -798,8 +799,8 @@
         ]
       },
       "max_n_iter": 259,
-      "fit_time_s": 29.825954294204713,
-      "wall_time_s": 85.7869291305542
+      "fit_time_s": 49.03808989524841,
+      "wall_time_s": 150.37443852424622
     },
     "E6": {
       "description": "E4 as ordinal logistic (P(y>1), P(y>2))",
@@ -873,8 +874,8 @@
         ]
       },
       "max_n_iter": 175,
-      "fit_time_s": 16.66095323562622,
-      "wall_time_s": 48.85636019706726
+      "fit_time_s": 21.90605092048645,
+      "wall_time_s": 65.83262085914612
     }
   },
   "best_config": {
@@ -1264,6 +1265,20 @@
     "n_features": 104,
     "n_excluded_rare": 21
   },
+  "final_model": {
+    "key": "hist_gb",
+    "label": "HistGradientBoosting",
+    "selection_rule": "highest mean 5-fold CV micro-F1 among the three tuned models",
+    "best_params": {
+      "learning_rate": 0.1,
+      "max_leaf_nodes": 31
+    },
+    "runner_up": "random_forest",
+    "cv_gain_over_runner_up": 0.0012231389102072,
+    "folds_won_vs_runner_up": 5,
+    "cv_gain_over_logreg": 0.009756331542594143,
+    "holdout_gain_over_logreg": 0.009286084303831488
+  },
   "submission": {
     "path": "outputs/submission.csv",
     "n_rows": 86868,
@@ -1272,13 +1287,1326 @@
       "damage_grade"
     ],
     "refit_rows": 260601,
-    "refit_n_iter": 232,
-    "C": 0.3,
-    "config": "E4",
+    "model": "hist_gb",
+    "model_label": "HistGradientBoosting",
+    "params": {
+      "learning_rate": 0.1,
+      "max_leaf_nodes": 31
+    },
+    "refit_n_iter": 0,
+    "refit_time_s": 49.74245047569275,
     "predicted_class_share": {
-      "1": 0.06832205184878205,
-      "2": 0.6490767601418244,
-      "3": 0.28260118800939354
+      "1": 0.07754293871160842,
+      "2": 0.6415020490859695,
+      "3": 0.2809550122024221
+    }
+  },
+  "models": {
+    "logreg": {
+      "label": "Logistic regression",
+      "preprocessing": "log1p + standardise numerics, one-hot categoricals and geo_level_1, multiclass target encoding of geo_level_2/3",
+      "fixed_params": {
+        "config": "E4",
+        "solver": "lbfgs",
+        "max_iter": 5000,
+        "penalty": "l2"
+      },
+      "cv": {
+        "f1_micro": {
+          "mean": 0.7354230621642363,
+          "std": 0.0010147324069022575,
+          "folds": [
+            0.7344589409056025,
+            0.7343390253261703,
+            0.7370731005372217,
+            0.7359698772064467,
+            0.7352743668457405
+          ]
+        },
+        "f1_macro": {
+          "mean": 0.6733241197431068,
+          "std": 0.0014686368113685678,
+          "folds": [
+            0.6712728511608238,
+            0.6727711117672873,
+            0.6756591705868468,
+            0.6728333342811882,
+            0.6740841309193875
+          ]
+        },
+        "recall_1": {
+          "mean": 0.46867992706286926,
+          "std": 0.0031696199033934775,
+          "folds": [
+            0.46653396367255534,
+            0.4689054726368159,
+            0.47139303482587064,
+            0.4639303482587065,
+            0.472636815920398
+          ]
+        },
+        "recall_2": {
+          "mean": 0.8454475778039114,
+          "std": 0.001851094494783938,
+          "folds": [
+            0.8440687968973948,
+            0.8434720290038362,
+            0.8449896715990051,
+            0.8487416213481725,
+            0.8459657701711492
+          ]
+        },
+        "recall_3": {
+          "mean": 0.6252328593407206,
+          "std": 0.0027269422748960087,
+          "folds": [
+            0.6252955929774274,
+            0.6252955929774274,
+            0.6301683984235041,
+            0.6226442135435328,
+            0.6227604987817114
+          ]
+        }
+      },
+      "rows": [
+        {
+          "params": {
+            "C": 0.01
+          },
+          "f1_micro_mean": 0.734909823484267,
+          "f1_micro_std": 0.0010715273987293283,
+          "f1_macro_mean": 0.670852744859693,
+          "mean_fit_time_s": 10.68543038368225,
+          "rank": 9
+        },
+        {
+          "params": {
+            "C": 0.03
+          },
+          "f1_micro_mean": 0.7351880276285494,
+          "f1_micro_std": 0.0011653524092855856,
+          "f1_macro_mean": 0.6722995143983662,
+          "mean_fit_time_s": 18.0856303691864,
+          "rank": 3
+        },
+        {
+          "params": {
+            "C": 0.1
+          },
+          "f1_micro_mean": 0.7352551803530314,
+          "f1_micro_std": 0.0010643100480176785,
+          "f1_macro_mean": 0.6729922172890184,
+          "mean_fit_time_s": 18.039951038360595,
+          "rank": 2
+        },
+        {
+          "params": {
+            "C": 0.3
+          },
+          "f1_micro_mean": 0.7354230621642363,
+          "f1_micro_std": 0.0010147324069022575,
+          "f1_macro_mean": 0.6733241197431068,
+          "mean_fit_time_s": 26.7030677318573,
+          "rank": 1
+        },
+        {
+          "params": {
+            "C": 1
+          },
+          "f1_micro_mean": 0.7351784343821949,
+          "f1_micro_std": 0.0010477081202321602,
+          "f1_macro_mean": 0.6731897126044764,
+          "mean_fit_time_s": 37.358182764053346,
+          "rank": 4
+        },
+        {
+          "params": {
+            "C": 3
+          },
+          "f1_micro_mean": 0.735077705295472,
+          "f1_micro_std": 0.0009435336976252194,
+          "f1_macro_mean": 0.6731449777037316,
+          "mean_fit_time_s": 40.71901726722717,
+          "rank": 6
+        },
+        {
+          "params": {
+            "C": 10
+          },
+          "f1_micro_mean": 0.7350681120491174,
+          "f1_micro_std": 0.0010428216211350347,
+          "f1_macro_mean": 0.6731580033376713,
+          "mean_fit_time_s": 44.38095374107361,
+          "rank": 7
+        },
+        {
+          "params": {
+            "C": 30
+          },
+          "f1_micro_mean": 0.735024942440522,
+          "f1_micro_std": 0.0009991033325716912,
+          "f1_macro_mean": 0.6731434487553778,
+          "mean_fit_time_s": 36.52726774215698,
+          "rank": 8
+        },
+        {
+          "params": {
+            "C": 100
+          },
+          "f1_micro_mean": 0.735111281657713,
+          "f1_micro_std": 0.0010902588369282593,
+          "f1_macro_mean": 0.6732286162236679,
+          "mean_fit_time_s": 33.818837785720824,
+          "rank": 5
+        }
+      ],
+      "best_params": {
+        "C": 0.3
+      },
+      "grid": {
+        "C": [
+          0.01,
+          0.03,
+          0.1,
+          0.3,
+          1,
+          3,
+          10,
+          30,
+          100
+        ]
+      },
+      "n_candidates": 9,
+      "time_s": 707.8256628513336,
+      "holdout": {
+        "f1_micro": 0.7404501064829915,
+        "f1_macro": 0.679755719287143,
+        "per_class": {
+          "1": {
+            "precision": 0.6718881118881119,
+            "recall": 0.4780099502487562,
+            "f1": 0.5586046511627907,
+            "support": 5025
+          },
+          "2": {
+            "precision": 0.739616425461819,
+            "recall": 0.8479697828139755,
+            "f1": 0.790095525389643,
+            "support": 29652
+          },
+          "3": {
+            "precision": 0.7592439862542956,
+            "recall": 0.6332836505388673,
+            "f1": 0.6905669813089954,
+            "support": 17444
+          }
+        },
+        "confusion_matrix": [
+          [
+            2402,
+            2539,
+            84
+          ],
+          [
+            1089,
+            25144,
+            3419
+          ],
+          [
+            84,
+            6313,
+            11047
+          ]
+        ],
+        "confusion_matrix_normalised": [
+          [
+            0.4780099502487562,
+            0.505273631840796,
+            0.01671641791044776
+          ],
+          [
+            0.03672602185350061,
+            0.8479697828139755,
+            0.11530419533252395
+          ],
+          [
+            0.004815409309791332,
+            0.36190094015134144,
+            0.6332836505388673
+          ]
+        ],
+        "n": 52121,
+        "predicted_class_share": {
+          "1": 0.06859039542602789,
+          "2": 0.6522514917211872,
+          "3": 0.27915811285278486
+        },
+        "model": "E4 tuned (C=0.3)"
+      },
+      "prioritisation": {
+        "at_fraction": {
+          "10": {
+            "capture_rate": 0.278892455858748,
+            "lift": 2.78892455858748,
+            "precision_in_top": 0.9334228702993093,
+            "n_inspected": 5212
+          },
+          "20": {
+            "capture_rate": 0.4979362531529466,
+            "lift": 2.489681265764733,
+            "precision_in_top": 0.8332693783576363,
+            "n_inspected": 10424
+          },
+          "30": {
+            "capture_rate": 0.6638385691355194,
+            "lift": 2.2127952304517313,
+            "precision_in_top": 0.740598618572525,
+            "n_inspected": 15636
+          }
+        },
+        "base_rate_grade3": 0.3346827574298267,
+        "auc_grade3_vs_rest": 0.8662554279462201,
+        "n_buildings": 52121,
+        "n_grade3": 17444
+      },
+      "importance": [
+        {
+          "feature": "geo_level_3_id",
+          "mean": 0.14274,
+          "std": 0.0017715529910222927
+        },
+        {
+          "feature": "geo_level_2_id",
+          "mean": 0.01959999999999997,
+          "std": 0.0016757088052522767
+        },
+        {
+          "feature": "age",
+          "mean": 0.005879999999999952,
+          "std": 0.002125464655081335
+        },
+        {
+          "feature": "geo_level_1_id",
+          "mean": 0.0037600000000000077,
+          "std": 0.0014827002394280503
+        },
+        {
+          "feature": "has_secondary_use",
+          "mean": 0.002599999999999958,
+          "std": 0.0007509993342207377
+        },
+        {
+          "feature": "ground_floor_type",
+          "mean": 0.0011999999999999789,
+          "std": 0.0006356099432828244
+        },
+        {
+          "feature": "has_superstructure_mud_mortar_stone",
+          "mean": 0.0009199999999999431,
+          "std": 0.0003655133376499533
+        },
+        {
+          "feature": "area_percentage",
+          "mean": 0.0008799999999999697,
+          "std": 0.0009130169768410498
+        },
+        {
+          "feature": "other_floor_type",
+          "mean": 0.0008599999999999497,
+          "std": 0.0013001538370516074
+        },
+        {
+          "feature": "foundation_type",
+          "mean": 0.0008399999999999519,
+          "std": 0.001438888459888403
+        },
+        {
+          "feature": "has_secondary_use_hotel",
+          "mean": 0.0008199999999999763,
+          "std": 0.0003249615361854395
+        },
+        {
+          "feature": "has_superstructure_timber",
+          "mean": 0.0006999999999999895,
+          "std": 0.0003346640106136398
+        },
+        {
+          "feature": "has_superstructure_mud_mortar_brick",
+          "mean": 0.0005599999999999605,
+          "std": 0.0004363484845854182
+        },
+        {
+          "feature": "count_families",
+          "mean": 0.0005199999999999872,
+          "std": 0.00038678159211628113
+        },
+        {
+          "feature": "height_percentage",
+          "mean": 0.00037999999999998034,
+          "std": 0.00028565713714171517
+        },
+        {
+          "feature": "has_superstructure_cement_mortar_stone",
+          "mean": 0.00037999999999995817,
+          "std": 0.0004308131845707799
+        },
+        {
+          "feature": "roof_type",
+          "mean": 0.00035999999999998257,
+          "std": 0.000993176721434783
+        },
+        {
+          "feature": "has_superstructure_adobe_mud",
+          "mean": 0.00033999999999996257,
+          "std": 0.00018547236990989365
+        },
+        {
+          "feature": "position",
+          "mean": 0.00027999999999999136,
+          "std": 0.0010399999999999928
+        },
+        {
+          "feature": "has_superstructure_cement_mortar_brick",
+          "mean": 0.00017999999999998017,
+          "std": 0.0004664761515876393
+        },
+        {
+          "feature": "has_secondary_use_industry",
+          "mean": 0.00015999999999998237,
+          "std": 4.898979485565817e-05
+        },
+        {
+          "feature": "plan_configuration",
+          "mean": 0.00011999999999996458,
+          "std": 0.00044452221541784934
+        },
+        {
+          "feature": "has_superstructure_rc_engineered",
+          "mean": 9.999999999998899e-05,
+          "std": 0.00016733200530679669
+        },
+        {
+          "feature": "has_secondary_use_institution",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_health_post",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_superstructure_other",
+          "mean": -2.2204460492503132e-17,
+          "std": 0.00016733200530683648
+        },
+        {
+          "feature": "has_secondary_use_school",
+          "mean": -1.9999999999997796e-05,
+          "std": 3.999999999999559e-05
+        },
+        {
+          "feature": "has_secondary_use_use_police",
+          "mean": -1.9999999999997796e-05,
+          "std": 3.999999999999559e-05
+        },
+        {
+          "feature": "has_secondary_use_other",
+          "mean": -1.9999999999997796e-05,
+          "std": 7.483314773547058e-05
+        },
+        {
+          "feature": "has_secondary_use_rental",
+          "mean": -6.0000000000015594e-05,
+          "std": 0.0002244994432064355
+        },
+        {
+          "feature": "has_secondary_use_gov_office",
+          "mean": -0.0001399999999999846,
+          "std": 4.898979485565817e-05
+        },
+        {
+          "feature": "has_superstructure_rc_non_engineered",
+          "mean": -0.0001600000000000268,
+          "std": 0.00024166091947189973
+        },
+        {
+          "feature": "has_superstructure_stone_flag",
+          "mean": -0.000160000000000049,
+          "std": 0.0003072458299147553
+        },
+        {
+          "feature": "has_superstructure_bamboo",
+          "mean": -0.00022000000000004237,
+          "std": 0.00017204650534087746
+        },
+        {
+          "feature": "legal_ownership_status",
+          "mean": -0.0003400000000000292,
+          "std": 0.0001496662954709827
+        },
+        {
+          "feature": "has_secondary_use_agriculture",
+          "mean": -0.0004400000000000182,
+          "std": 0.00033823069050576923
+        },
+        {
+          "feature": "land_surface_condition",
+          "mean": -0.0006200000000000427,
+          "std": 0.00033704599092701726
+        },
+        {
+          "feature": "count_floors_pre_eq",
+          "mean": -0.0009600000000000497,
+          "std": 0.0009090654541890683
+        }
+      ]
+    },
+    "random_forest": {
+      "label": "Random forest",
+      "preprocessing": "ordinal-coded categoricals and geo_level_1, raw numerics, multiclass target encoding of geo_level_2/3",
+      "fixed_params": {
+        "n_estimators": 150,
+        "max_samples": 0.5,
+        "bootstrap": true,
+        "criterion": "gini"
+      },
+      "cv": {
+        "f1_micro": {
+          "mean": 0.7439562547966231,
+          "std": 0.001438907007244571,
+          "folds": [
+            0.7428050652340752,
+            0.7444838833461244,
+            0.7460907521105142,
+            0.7419656561780507,
+            0.7444359171143515
+          ]
+        },
+        "f1_macro": {
+          "mean": 0.6871720987181175,
+          "std": 0.0020071414418594315,
+          "folds": [
+            0.6859103492937436,
+            0.6894637008198806,
+            0.6896427618929438,
+            0.6846908654517331,
+            0.6861528161322861
+          ]
+        },
+        "recall_1": {
+          "mean": 0.49514923516282733,
+          "std": 0.004607011599345517,
+          "folds": [
+            0.499626772829062,
+            0.4980099502487562,
+            0.4982587064676617,
+            0.4925373134328358,
+            0.4873134328358209
+          ]
+        },
+        "recall_2": {
+          "mean": 0.8547387598862235,
+          "std": 0.0006901573659217587,
+          "folds": [
+            0.8540173678441952,
+            0.8555288562876776,
+            0.85384258673749,
+            0.8549386619451119,
+            0.8553663266166428
+          ]
+        },
+        "recall_3": {
+          "mean": 0.6273110702529944,
+          "std": 0.004456662137293891,
+          "folds": [
+            0.6237907560014332,
+            0.626728771049803,
+            0.6343246148333931,
+            0.6217843067001075,
+            0.6299269026802351
+          ]
+        }
+      },
+      "rows": [
+        {
+          "params": {
+            "max_features": "sqrt",
+            "min_samples_leaf": 2
+          },
+          "f1_micro_mean": 0.7439562547966231,
+          "f1_micro_std": 0.001438907007244571,
+          "f1_macro_mean": 0.6871720987181175,
+          "mean_fit_time_s": 24.5712260723114,
+          "rank": 1
+        },
+        {
+          "params": {
+            "max_features": "sqrt",
+            "min_samples_leaf": 5
+          },
+          "f1_micro_mean": 0.742987336914812,
+          "f1_micro_std": 0.0013900776171468965,
+          "f1_macro_mean": 0.6840787287098861,
+          "mean_fit_time_s": 32.010829019546506,
+          "rank": 3
+        },
+        {
+          "params": {
+            "max_features": 0.25,
+            "min_samples_leaf": 2
+          },
+          "f1_micro_mean": 0.743040099769762,
+          "f1_micro_std": 0.0017104115280766057,
+          "f1_macro_mean": 0.6869189863534106,
+          "mean_fit_time_s": 45.3543897151947,
+          "rank": 2
+        },
+        {
+          "params": {
+            "max_features": 0.25,
+            "min_samples_leaf": 5
+          },
+          "f1_micro_mean": 0.7425364543361473,
+          "f1_micro_std": 0.0010633368209838291,
+          "f1_macro_mean": 0.6850863405943479,
+          "mean_fit_time_s": 38.49171710014343,
+          "rank": 4
+        }
+      ],
+      "best_params": {
+        "max_features": "sqrt",
+        "min_samples_leaf": 2
+      },
+      "grid": {
+        "min_samples_leaf": [
+          2,
+          5
+        ],
+        "max_features": [
+          "sqrt",
+          0.25
+        ]
+      },
+      "n_candidates": 4,
+      "time_s": 767.0758712291718,
+      "holdout": {
+        "f1_micro": 0.7501966577770957,
+        "f1_macro": 0.6956378610084419,
+        "per_class": {
+          "1": {
+            "precision": 0.70355078447564,
+            "recall": 0.5086567164179104,
+            "f1": 0.5904365904365905,
+            "support": 5025
+          },
+          "2": {
+            "precision": 0.7474884364964794,
+            "recall": 0.8556589774720086,
+            "f1": 0.7979243651230442,
+            "support": 29652
+          },
+          "3": {
+            "precision": 0.7681677552423514,
+            "recall": 0.6405067645035543,
+            "f1": 0.6985526274656914,
+            "support": 17444
+          }
+        },
+        "confusion_matrix": [
+          [
+            2556,
+            2390,
+            79
+          ],
+          [
+            987,
+            25372,
+            3293
+          ],
+          [
+            90,
+            6181,
+            11173
+          ]
+        ],
+        "confusion_matrix_normalised": [
+          [
+            0.5086567164179104,
+            0.47562189054726367,
+            0.01572139303482587
+          ],
+          [
+            0.03328611898016997,
+            0.8556589774720086,
+            0.1110549035478214
+          ],
+          [
+            0.00515936711763357,
+            0.3543338683788122,
+            0.6405067645035543
+          ]
+        ],
+        "n": 52121,
+        "predicted_class_share": {
+          "1": 0.06970319065252009,
+          "2": 0.6512346271176686,
+          "3": 0.2790621822298114
+        }
+      },
+      "prioritisation": {
+        "at_fraction": {
+          "10": {
+            "capture_rate": 0.28147213941756477,
+            "lift": 2.8147213941756477,
+            "precision_in_top": 0.9420567920184191,
+            "n_inspected": 5212
+          },
+          "20": {
+            "capture_rate": 0.505789956432011,
+            "lift": 2.528949782160055,
+            "precision_in_top": 0.8464121258633922,
+            "n_inspected": 10424
+          },
+          "30": {
+            "capture_rate": 0.6718069250171979,
+            "lift": 2.239356416723993,
+            "precision_in_top": 0.7494883601944231,
+            "n_inspected": 15636
+          }
+        },
+        "base_rate_grade3": 0.3346827574298267,
+        "auc_grade3_vs_rest": 0.8722908292921903,
+        "n_buildings": 52121,
+        "n_grade3": 17444
+      },
+      "importance": [
+        {
+          "feature": "geo_level_3_id",
+          "mean": 0.10907999999999998,
+          "std": 0.0033234921393016344
+        },
+        {
+          "feature": "geo_level_2_id",
+          "mean": 0.09711999999999996,
+          "std": 0.0021479292353334227
+        },
+        {
+          "feature": "age",
+          "mean": 0.008219999999999983,
+          "std": 0.002419421418438735
+        },
+        {
+          "feature": "area_percentage",
+          "mean": 0.003559999999999941,
+          "std": 0.0007088018058667648
+        },
+        {
+          "feature": "has_superstructure_cement_mortar_brick",
+          "mean": 0.002259999999999973,
+          "std": 0.00024166091947186484
+        },
+        {
+          "feature": "height_percentage",
+          "mean": 0.002059999999999973,
+          "std": 0.0009068627239003751
+        },
+        {
+          "feature": "has_superstructure_timber",
+          "mean": 0.0012999999999999678,
+          "std": 0.0005830951894845307
+        },
+        {
+          "feature": "geo_level_1_id",
+          "mean": 0.0010799999999999699,
+          "std": 0.0011214276615100997
+        },
+        {
+          "feature": "roof_type",
+          "mean": 0.0009399999999999853,
+          "std": 0.0005919459434779235
+        },
+        {
+          "feature": "land_surface_condition",
+          "mean": 0.0006799999999999695,
+          "std": 0.0006112282715974192
+        },
+        {
+          "feature": "has_superstructure_bamboo",
+          "mean": 0.00045999999999997155,
+          "std": 0.00033226495451672253
+        },
+        {
+          "feature": "count_floors_pre_eq",
+          "mean": 0.00035999999999996034,
+          "std": 0.000338230690505718
+        },
+        {
+          "feature": "has_superstructure_other",
+          "mean": 0.00031999999999996474,
+          "std": 0.00011661903789689316
+        },
+        {
+          "feature": "ground_floor_type",
+          "mean": 0.00021999999999997578,
+          "std": 0.0006177378084592167
+        },
+        {
+          "feature": "has_secondary_use_agriculture",
+          "mean": 0.00015999999999998237,
+          "std": 0.00024166091947186484
+        },
+        {
+          "feature": "has_superstructure_rc_engineered",
+          "mean": 5.999999999997119e-05,
+          "std": 0.00022449944320644737
+        },
+        {
+          "feature": "has_superstructure_mud_mortar_stone",
+          "mean": 1.9999999999975594e-05,
+          "std": 0.0008207313811473109
+        },
+        {
+          "feature": "has_secondary_use_institution",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_school",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_industry",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_health_post",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_gov_office",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_use_police",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "legal_ownership_status",
+          "mean": -2.2204460492503132e-17,
+          "std": 0.0002683281572999866
+        },
+        {
+          "feature": "has_superstructure_stone_flag",
+          "mean": -1.9999999999997796e-05,
+          "std": 0.0001469693845669745
+        },
+        {
+          "feature": "has_superstructure_cement_mortar_stone",
+          "mean": -3.999999999999559e-05,
+          "std": 0.00010198039027184446
+        },
+        {
+          "feature": "has_secondary_use_other",
+          "mean": -3.999999999999559e-05,
+          "std": 4.898979485565817e-05
+        },
+        {
+          "feature": "count_families",
+          "mean": -8.00000000000134e-05,
+          "std": 0.0004534313619501707
+        },
+        {
+          "feature": "has_secondary_use",
+          "mean": -8.00000000000134e-05,
+          "std": 0.0002925747767665555
+        },
+        {
+          "feature": "has_secondary_use_rental",
+          "mean": -0.00011999999999998679,
+          "std": 7.483314773547058e-05
+        },
+        {
+          "feature": "has_secondary_use_hotel",
+          "mean": -0.0001400000000000068,
+          "std": 0.00017435595774164086
+        },
+        {
+          "feature": "has_superstructure_adobe_mud",
+          "mean": -0.0001800000000000246,
+          "std": 0.00035440090293339434
+        },
+        {
+          "feature": "other_floor_type",
+          "mean": -0.00022000000000002017,
+          "std": 0.00039191835884530845
+        },
+        {
+          "feature": "foundation_type",
+          "mean": -0.00030000000000001136,
+          "std": 0.0003033150177620798
+        },
+        {
+          "feature": "has_superstructure_mud_mortar_brick",
+          "mean": -0.0003200000000000536,
+          "std": 0.00024000000000001242
+        },
+        {
+          "feature": "position",
+          "mean": -0.00044000000000004035,
+          "std": 0.0007059745037889389
+        },
+        {
+          "feature": "has_superstructure_rc_non_engineered",
+          "mean": -0.0004400000000000626,
+          "std": 0.00010198039027184446
+        },
+        {
+          "feature": "plan_configuration",
+          "mean": -0.0004800000000000582,
+          "std": 0.00019390719429663181
+        }
+      ],
+      "mean_nodes_per_tree": 36913
+    },
+    "hist_gb": {
+      "label": "HistGradientBoosting",
+      "preprocessing": "ordinal-coded categoricals and geo_level_1, raw numerics, multiclass target encoding of geo_level_2/3; native categorical splits",
+      "fixed_params": {
+        "loss": "log_loss",
+        "max_iter": 300,
+        "early_stopping": false,
+        "l2_regularization": 0.0
+      },
+      "cv": {
+        "f1_micro": {
+          "mean": 0.7451793937068304,
+          "std": 0.0011429659583370695,
+          "folds": [
+            0.7437643898695319,
+            0.7464984650805833,
+            0.7464504988488104,
+            0.7441001534919417,
+            0.7450834612432847
+          ]
+        },
+        "f1_macro": {
+          "mean": 0.6936178890355917,
+          "std": 0.0021957021597413693,
+          "folds": [
+            0.6928257383956634,
+            0.6973849079222944,
+            0.6943925747364426,
+            0.6908326477285475,
+            0.6926535763950114
+          ]
+        },
+        "recall_1": {
+          "mean": 0.5303254194318281,
+          "std": 0.00809638527302758,
+          "folds": [
+            0.5409305797462055,
+            0.5390547263681592,
+            0.5268656716417911,
+            0.5216417910447761,
+            0.5231343283582089
+          ]
+        },
+        "recall_2": {
+          "mean": 0.8461220778046776,
+          "std": 0.0016611196733829431,
+          "folds": [
+            0.8439423320124778,
+            0.8462122170228911,
+            0.8447788879052317,
+            0.8486573078706632,
+            0.8470196442121237
+          ]
+        },
+        "recall_3": {
+          "mean": 0.6354802684584714,
+          "std": 0.004244014851294901,
+          "folds": [
+            0.6318882121103547,
+            0.6367610175564314,
+            0.6425653887495522,
+            0.6304550340379792,
+            0.6357316898380393
+          ]
+        }
+      },
+      "rows": [
+        {
+          "params": {
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 15
+          },
+          "f1_micro_mean": 0.7432223714504989,
+          "f1_micro_std": 0.0017009153133414035,
+          "f1_macro_mean": 0.6903144106324038,
+          "mean_fit_time_s": 31.33438014984131,
+          "rank": 4
+        },
+        {
+          "params": {
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 31
+          },
+          "f1_micro_mean": 0.7444311204911742,
+          "f1_micro_std": 0.0010124625123117713,
+          "f1_macro_mean": 0.6921720495950539,
+          "mean_fit_time_s": 31.726195669174196,
+          "rank": 2
+        },
+        {
+          "params": {
+            "learning_rate": 0.1,
+            "max_leaf_nodes": 15
+          },
+          "f1_micro_mean": 0.7441481197237145,
+          "f1_micro_std": 0.0008886059997627912,
+          "f1_macro_mean": 0.6921865129056756,
+          "mean_fit_time_s": 25.5459584236145,
+          "rank": 3
+        },
+        {
+          "params": {
+            "learning_rate": 0.1,
+            "max_leaf_nodes": 31
+          },
+          "f1_micro_mean": 0.7451793937068304,
+          "f1_micro_std": 0.0011429659583370695,
+          "f1_macro_mean": 0.6936178890355917,
+          "mean_fit_time_s": 30.099613380432128,
+          "rank": 1
+        },
+        {
+          "params": {
+            "learning_rate": 0.2,
+            "max_leaf_nodes": 15
+          },
+          "f1_micro_mean": 0.7426275901765157,
+          "f1_micro_std": 0.0011649574816582416,
+          "f1_macro_mean": 0.68970273857929,
+          "mean_fit_time_s": 23.13503713607788,
+          "rank": 5
+        },
+        {
+          "params": {
+            "learning_rate": 0.2,
+            "max_leaf_nodes": 31
+          },
+          "f1_micro_mean": 0.7406417881811205,
+          "f1_micro_std": 0.0012807432997491558,
+          "f1_macro_mean": 0.6885227998573267,
+          "mean_fit_time_s": 31.54019546508789,
+          "rank": 6
+        }
+      ],
+      "best_params": {
+        "learning_rate": 0.1,
+        "max_leaf_nodes": 31
+      },
+      "grid": {
+        "learning_rate": [
+          0.05,
+          0.1,
+          0.2
+        ],
+        "max_leaf_nodes": [
+          15,
+          31
+        ]
+      },
+      "n_candidates": 6,
+      "time_s": 977.0055346488953,
+      "holdout": {
+        "f1_micro": 0.749736190786823,
+        "f1_macro": 0.700907137692098,
+        "per_class": {
+          "1": {
+            "precision": 0.6813458683819891,
+            "recall": 0.5480597014925374,
+            "f1": 0.6074776662622697,
+            "support": 5025
+          },
+          "2": {
+            "precision": 0.7512877335888836,
+            "recall": 0.8460474841494672,
+            "f1": 0.7958568618742465,
+            "support": 29652
+          },
+          "3": {
+            "precision": 0.7650302989037925,
+            "recall": 0.6441183214858978,
+            "f1": 0.6993868849397777,
+            "support": 17444
+          }
+        },
+        "confusion_matrix": [
+          [
+            2754,
+            2202,
+            69
+          ],
+          [
+            1183,
+            25087,
+            3382
+          ],
+          [
+            105,
+            6103,
+            11236
+          ]
+        ],
+        "confusion_matrix_normalised": [
+          [
+            0.5480597014925374,
+            0.4382089552238806,
+            0.01373134328358209
+          ],
+          [
+            0.039896128423040605,
+            0.8460474841494672,
+            0.11405638742749225
+          ],
+          [
+            0.006019261637239166,
+            0.3498624168768631,
+            0.6441183214858978
+          ]
+        ],
+        "n": 52121,
+        "predicted_class_share": {
+          "1": 0.07755031561174958,
+          "2": 0.6406630724659926,
+          "3": 0.28178661192225785
+        }
+      },
+      "prioritisation": {
+        "at_fraction": {
+          "10": {
+            "capture_rate": 0.28170144462279295,
+            "lift": 2.817014446227929,
+            "precision_in_top": 0.9428242517267843,
+            "n_inspected": 5212
+          },
+          "20": {
+            "capture_rate": 0.5059619353359321,
+            "lift": 2.5298096766796605,
+            "precision_in_top": 0.8466999232540292,
+            "n_inspected": 10424
+          },
+          "30": {
+            "capture_rate": 0.6707177252923642,
+            "lift": 2.2357257509745474,
+            "precision_in_top": 0.7482732156561781,
+            "n_inspected": 15636
+          }
+        },
+        "base_rate_grade3": 0.3346827574298267,
+        "auc_grade3_vs_rest": 0.8750819706429955,
+        "n_buildings": 52121,
+        "n_grade3": 17444
+      },
+      "importance": [
+        {
+          "feature": "geo_level_3_id",
+          "mean": 0.11061999999999998,
+          "std": 0.0020173249614278735
+        },
+        {
+          "feature": "geo_level_2_id",
+          "mean": 0.04369999999999998,
+          "std": 0.004288589511715949
+        },
+        {
+          "feature": "geo_level_1_id",
+          "mean": 0.017399999999999992,
+          "std": 0.002787830697872453
+        },
+        {
+          "feature": "age",
+          "mean": 0.010419999999999985,
+          "std": 0.0011720068259186882
+        },
+        {
+          "feature": "has_superstructure_mud_mortar_stone",
+          "mean": 0.007359999999999989,
+          "std": 0.0006916646586316223
+        },
+        {
+          "feature": "has_superstructure_cement_mortar_brick",
+          "mean": 0.005339999999999989,
+          "std": 0.0008114185110040179
+        },
+        {
+          "feature": "area_percentage",
+          "mean": 0.002619999999999978,
+          "std": 0.000872696969170872
+        },
+        {
+          "feature": "foundation_type",
+          "mean": 0.0021400000000000086,
+          "std": 0.0010669582934679377
+        },
+        {
+          "feature": "has_superstructure_mud_mortar_brick",
+          "mean": 0.0017000000000000127,
+          "std": 0.0011436782764396817
+        },
+        {
+          "feature": "height_percentage",
+          "mean": 0.0016800000000000148,
+          "std": 0.0005775811631277586
+        },
+        {
+          "feature": "other_floor_type",
+          "mean": 0.0016000000000000237,
+          "std": 0.0006356099432828384
+        },
+        {
+          "feature": "has_secondary_use",
+          "mean": 0.0015200000000000103,
+          "std": 0.0005306599664568491
+        },
+        {
+          "feature": "roof_type",
+          "mean": 0.0012799999999999923,
+          "std": 0.001712775525280518
+        },
+        {
+          "feature": "ground_floor_type",
+          "mean": 0.0011199999999999878,
+          "std": 0.0004955804677345584
+        },
+        {
+          "feature": "has_superstructure_stone_flag",
+          "mean": 0.0007800000000000029,
+          "std": 0.00037629775444451656
+        },
+        {
+          "feature": "land_surface_condition",
+          "mean": 0.0007599999999999829,
+          "std": 0.0006651315659326131
+        },
+        {
+          "feature": "count_families",
+          "mean": 0.0006799999999999917,
+          "std": 0.00047497368348151857
+        },
+        {
+          "feature": "has_superstructure_cement_mortar_stone",
+          "mean": 0.0005799999999999805,
+          "std": 0.00041665333311998674
+        },
+        {
+          "feature": "has_superstructure_bamboo",
+          "mean": 0.00038000000000000257,
+          "std": 0.0003762977544445319
+        },
+        {
+          "feature": "plan_configuration",
+          "mean": 0.00033999999999998474,
+          "std": 0.0004029888335921897
+        },
+        {
+          "feature": "has_superstructure_rc_non_engineered",
+          "mean": 0.00033999999999998474,
+          "std": 0.00028000000000000567
+        },
+        {
+          "feature": "has_superstructure_other",
+          "mean": 0.00033999999999998474,
+          "std": 0.0002332380757938206
+        },
+        {
+          "feature": "has_superstructure_adobe_mud",
+          "mean": 0.00027999999999999136,
+          "std": 0.0002925747767665631
+        },
+        {
+          "feature": "has_secondary_use_hotel",
+          "mean": 0.0002799999999999692,
+          "std": 0.0001469693845669745
+        },
+        {
+          "feature": "count_floors_pre_eq",
+          "mean": 0.00021999999999997578,
+          "std": 0.0011651609330903697
+        },
+        {
+          "feature": "has_superstructure_timber",
+          "mean": 0.00018000000000000237,
+          "std": 0.000805977667184387
+        },
+        {
+          "feature": "has_superstructure_rc_engineered",
+          "mean": 9.999999999998899e-05,
+          "std": 0.00019999999999997797
+        },
+        {
+          "feature": "has_secondary_use_industry",
+          "mean": 3.999999999999559e-05,
+          "std": 4.898979485565817e-05
+        },
+        {
+          "feature": "position",
+          "mean": 2.0000000000020002e-05,
+          "std": 0.0010721940122944268
+        },
+        {
+          "feature": "has_secondary_use_agriculture",
+          "mean": 1.9999999999997796e-05,
+          "std": 0.00044452221541787336
+        },
+        {
+          "feature": "has_secondary_use_institution",
+          "mean": 1.9999999999997796e-05,
+          "std": 3.999999999999559e-05
+        },
+        {
+          "feature": "has_secondary_use_health_post",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_use_police",
+          "mean": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_gov_office",
+          "mean": -3.999999999999559e-05,
+          "std": 4.898979485565817e-05
+        },
+        {
+          "feature": "has_secondary_use_school",
+          "mean": -9.999999999998899e-05,
+          "std": 0.0
+        },
+        {
+          "feature": "has_secondary_use_rental",
+          "mean": -0.00012000000000000899,
+          "std": 0.0002039607805437303
+        },
+        {
+          "feature": "has_secondary_use_other",
+          "mean": -0.00019999999999997797,
+          "std": 0.00010954451150102117
+        },
+        {
+          "feature": "legal_ownership_status",
+          "mean": -0.00030000000000001136,
+          "std": 0.00017888543820001313
+        }
+      ]
     }
   }
 }

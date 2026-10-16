@@ -33,11 +33,11 @@ class Report:
         st = self.doc.styles
         normal = st["Normal"]
         normal.font.name = "Calibri"
-        normal.font.size = Pt(11)
+        normal.font.size = Pt(10.5)
         normal.element.rPr.rFonts.set(qn("w:eastAsia"), "Calibri")
         pf = normal.paragraph_format
         pf.space_after = Pt(6)
-        pf.line_spacing = 1.15
+        pf.line_spacing = 1.1
         for lvl, size in [(1, 16), (2, 13), (3, 11.5)]:
             h = st[f"Heading {lvl}"]
             h.font.name = "Cambria"
@@ -219,6 +219,12 @@ def build(R: ResultsView) -> Report:
     best_desc = {"E4": "the multinomial model with engineered features (E4)",
                  "E5": "the class-balanced multinomial model (E5)",
                  "E6": "the ordinal model (E6)"}[R.best]
+    # three-model comparison
+    F, FL = R.F, R.label(R.F)
+    LR, RF, HGB = "logreg", "random_forest", "hist_gb"
+    tree_won = F != LR
+    gain_cv, gain_ho = R.final["cv_gain_over_logreg"], R.final["holdout_gain_over_logreg"]
+    trees_cv_best = max(R.mcv(RF), R.mcv(HGB)) - R.mcv(LR)
 
     # ------------------------------------------------------------ cover page
     for _ in range(4):
@@ -229,7 +235,7 @@ def build(R: ResultsView) -> Report:
     r.bold, r.font.size, r.font.name, r.font.color.rgb = True, Pt(24), "Cambria", NAVY
     st = doc.add_paragraph()
     st.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = st.add_run("A logistic-regression study of the 2015 Gorkha earthquake building-damage data (Richter's Predictor)")
+    r = st.add_run("Logistic regression, random forest and gradient boosting on the 2015 Gorkha earthquake building-damage data (Richter's Predictor)")
     r.font.size, r.font.color.rgb = Pt(13), GREY
     for _ in range(2):
         doc.add_paragraph()
@@ -267,13 +273,16 @@ def build(R: ResultsView) -> Report:
     rp.p(f"After the 2015 Gorkha earthquake, Nepal surveyed hundreds of thousands of damaged buildings. "
          f"We ask whether a building's recorded structure and location can predict its damage grade well enough to rank buildings for inspection. "
          f"Using {n(d['n_train_rows'])} labelled buildings from the DrivenData competition Richter's Predictor, we built a leakage-safe scikit-learn pipeline "
-         f"and ran seven controlled experiments, restricted to logistic regression. "
-         f"Location, encoded with cross-fitted multiclass target encoding of {n(d['n_unique']['geo_level_3_id'])} local areas, gave the largest single gain "
-         f"({pp(te_gain)} in cross-validated micro-F1). An ordinal formulation using two cumulative binary models "
-         f"{'did not outperform' if ord_mic <= 0.001 else 'outperformed'} the standard multinomial model, and class weighting traded overall accuracy for recall of the rare low-damage class. "
-         f"The tuned model ({R.best}, C = {R.best_C:g}) reaches a holdout micro-F1 of {f3(H_mic)} and macro-F1 of {f3(H_mac)}, against {f3(base)} for the majority-class baseline. "
-         f"Ranking buildings by predicted probability of grade-3 damage, inspecting the top 20% of buildings finds {pct(R.cap(20))} of all grade-3 buildings, "
-         f"{R.lift(20):.1f} times what a random order finds. The coefficients agree with engineering intuition: "
+         f"and compared three classifiers: logistic regression, a random forest and HistGradientBoosting. "
+         f"Seven controlled logistic-regression experiments showed that location, encoded with cross-fitted multiclass target encoding of {n(d['n_unique']['geo_level_3_id'])} local areas, gave the largest single gain "
+         f"({pp(te_gain)} in cross-validated micro-F1). An ordinal formulation "
+         f"{'did not outperform' if ord_mic <= 0.001 else 'outperformed'} the multinomial model, and class weighting traded overall accuracy for recall of the rare low-damage class. "
+         f"The tuned logistic model reaches a holdout micro-F1 of {f3(H_mic)} (macro-F1 {f3(H_mac)}), against {f3(base)} for the majority-class baseline. "
+         f"With the same features and folds, the tuned random forest reaches {f3(R.mho(RF))} and HistGradientBoosting {f3(R.mho(HGB))}. "
+         + (f"{FL}, which had the highest cross-validated micro-F1, is our final model: it gains {pp(gain_cv, 2)} in cross-validation and {pp(gain_ho, 2)} on the holdout over logistic regression. "
+            if tree_won else f"Logistic regression still had the highest cross-validated micro-F1 and remains the final model. ")
+         + f"Ranking buildings by the final model's probability of grade-3 damage, inspecting the top 20% finds {pct(R.mcap(F))} of all grade-3 buildings, "
+         f"against 20% for a random order. The logistic coefficients agree with engineering intuition: "
          f"mud-mortar stone and stone-flag construction raise the odds of destruction, and engineered reinforced concrete and cement-bonded masonry lower them.")
     rp.h("Contents", 1)
     toc = doc.add_paragraph()
@@ -292,14 +301,16 @@ def build(R: ResultsView) -> Report:
               "so post-disaster inspectors can prioritise which buildings to assess first?”", "i"), align=WD_ALIGN_PARAGRAPH.CENTER)
     q.paragraph_format.left_indent = q.paragraph_format.right_indent = Cm(1.2)
     rp.p("We treat this as a three-class classification problem with an ordered target: damage grade 1 (low), 2 (medium) and 3 (almost complete destruction). "
-         "We deliberately restrict ourselves to ", ("logistic regression", "b"),
-         ". Its predictions are fast to compute, its coefficients can be audited by engineers, and its probabilities can be used directly to rank buildings. "
-         "Our contributions are:")
+         "We compare three classification models. Model 1 is ", ("logistic regression", "b"),
+         ", which we study in most depth: its predictions are fast, its coefficients can be audited by engineers, and its probabilities can be used directly to rank buildings. "
+         "Models 2 and 3 are tree ensembles, a ", ("random forest", "b"), " and ", ("HistGradientBoosting", "b"),
+         ", which can learn interactions and non-linear effects that a linear model cannot. Our contributions are:")
     rp.bullets([
-        "a fully leakage-safe preprocessing and modelling pipeline, evaluated with stratified 5-fold cross-validation and a holdout that is used only once;",
-        "a controlled sequence of seven experiments that isolates the value of structure, coarse location, fine location, engineered features, class weighting and an ordinal formulation;",
-        "cross-fitted multiclass target encoding of the high-cardinality location identifiers, which turns out to be the single most valuable idea;",
-        "a prioritisation analysis that converts model output into an inspection policy, and a coefficient-level interpretation in plain language.",
+        "a fully leakage-safe preprocessing and modelling pipeline, evaluated with stratified 5-fold cross-validation and a holdout that each tuned model sees only once;",
+        "a controlled sequence of seven logistic-regression experiments that isolates the value of structure, coarse location, fine location, engineered features, class weighting and an ordinal formulation;",
+        "cross-fitted multiclass target encoding of the high-cardinality location identifiers, which turns out to be the single most valuable idea for all three models;",
+        "a like-for-like comparison of the three tuned models on the same features and folds, with the final model chosen by cross-validation;",
+        "a prioritisation analysis that converts model output into an inspection policy, and an interpretation that combines odds ratios with permutation importance.",
     ])
 
     # ------------------------------------------------------------ 2 dataset
@@ -326,32 +337,31 @@ def build(R: ResultsView) -> Report:
          f", a placeholder far beyond the largest real age of {d['age_max_real']} years. Second, the finest location level has "
          f"{n(d['n_unique']['geo_level_3_id'])} distinct values, too many to one-hot encode sensibly. "
          f"Also, {pct(d['test_geo3_unseen_share'], 2)} of test buildings fall in a geo_level_3 area that never appears in the labelled data.")
-    rp.figure("fig01_class_distribution", "Damage-grade distribution in the 80% training split. Grade 2 is the majority class; grade 1 is rare.", 11)
+    rp.figure("fig01_class_distribution", "Damage-grade distribution in the 80% training split. Grade 2 is the majority class; grade 1 is rare.", 9.5)
 
     # ------------------------------------------------------------ 3 preprocessing
     rp.h("3. Data Pre-processing", 1)
     rp.p(f"Before any exploration, we made a stratified 80/20 split ({n(R.split['n_train'])} training and {n(R.split['n_holdout'])} holdout buildings). "
          "All exploration below uses only the training split, so nothing we decided about the features was influenced by the holdout.")
     rp.h("3.1 Exploration", 2)
-    rp.p(f"Construction type separates the classes sharply (Figure {rp.next_fig()}). Foundation type r, used by {pct(fnd['prevalence']['r'], 0)} of buildings, "
+    rp.p(f"Construction type separates the classes sharply (Appendix C, Figure C1). Foundation type r, used by {pct(fnd['prevalence']['r'], 0)} of buildings, "
          f"has a grade-3 share of {pct(fnd['grade3_share']['r'], 0)}. Foundation i has a grade-3 share of only {pct(fnd['grade3_share']['i'], 0)} and a grade-1 share of {pct(fnd['grade1_share']['i'], 0)}. "
          f"Roof type x shows the same protective pattern ({pct(roof['grade3_share']['x'], 0)} grade 3). The category codes are anonymised, but these profiles are "
          "consistent with engineered, reinforced construction.")
-    fig_found = rp.figure("fig02_damage_by_foundation_roof", "Damage-grade mix by foundation type (left) and roof type (right), training split. Bars are sorted by grade-3 share; n is the number of buildings.")
     rp.p(f"Superstructure material is the clearest structural signal (Figure {rp.next_fig()}). Mud-mortar stone is used in {pct(mms['prevalence'], 0)} of buildings, "
          f"and {pct(mms['grade3_share'], 0)} of those reached grade 3. Engineered reinforced concrete (RC) reached grade 3 in only {pct(rce['grade3_share'], 1)} of cases, "
          f"with {pct(rce['grade1_share'], 0)} at grade 1. Cement-mortar brick is similarly protective ({pct(cmb['grade3_share'], 0)} grade 3).")
-    rp.figure("fig03_damage_by_superstructure", "Damage-grade mix by superstructure material. A building can use several materials, so rows overlap.", 14)
+    rp.figure("fig03_damage_by_superstructure", "Damage-grade mix by superstructure material. A building can use several materials, so rows overlap.", 10.5)
     rp.p(f"Location matters at least as much as structure (Figure {rp.next_fig()}). Across the {d['n_unique']['geo_level_1_id']} top-level regions, the grade-3 share ranges from "
          f"{pct(g1['min'], 0)} (region {g1['argmin']}) to {pct(g1['max'], 0)} (region {g1['argmax']}). Location most likely stands in for shaking intensity, "
          "that is, distance from the epicentre and local ground conditions. These are not in the data, but they strongly shape damage.")
-    rp.figure("fig04_damage_by_geo1", f"Damage-grade mix for each of the {d['n_unique']['geo_level_1_id']} geo_level_1 regions, sorted by grade-3 share.")
+    rp.figure("fig04_damage_by_geo1", f"Damage-grade mix for each of the {d['n_unique']['geo_level_1_id']} geo_level_1 regions, sorted by grade-3 share.", 13)
     sk, skl = R.eda["skewness"], R.eda["skewness_after_log1p"]
     rp.p(f"The numeric features are right-skewed, with skewness {sk['age']:.2f} for age, {sk['area_percentage']:.2f} for area and {sk['height_percentage']:.2f} for height. "
-         f"A log1p transform reduces this to {skl['age']:.2f}, {skl['area_percentage']:.2f} and {skl['height_percentage']:.2f} (Appendix C, Figure C1). "
+         f"A log1p transform reduces this to {skl['age']:.2f}, {skl['area_percentage']:.2f} and {skl['height_percentage']:.2f} (Appendix C, Figure C2). "
          f"Individually these features are only weakly related to damage: the largest absolute Spearman correlation with damage grade among numeric and material features is "
          f"{max(abs(v) for v in R.eda['spearman_with_target'].values()):.2f}. Height and number of floors are strongly collinear "
-         f"(ρ = {R.eda['spearman_height_floors']:.2f}; Appendix C, Figure C2). The weak marginal correlations show that damage comes from combinations of many weak signals, "
+         f"(ρ = {R.eda['spearman_height_floors']:.2f}; Appendix C, Figure C3). The weak marginal correlations show that damage comes from combinations of many weak signals, "
          "which is what a multivariate model needs to capture. The L2 penalty of logistic regression keeps the collinear pair stable.")
 
     rp.h("3.2 Cleaning", 2)
@@ -374,6 +384,11 @@ def build(R: ResultsView) -> Report:
          "Rare ids are shrunk toward the global class distribution, and ids never seen in training receive the global distribution. Target encoding can leak the label, "
          "because a building's own grade would contribute to its own feature. scikit-learn's implementation therefore uses ", ("cross-fitting", "i"),
          " in fit_transform: training rows are encoded with statistics computed on the other internal folds (Micci-Barreca, 2001; Pedregosa et al., 2011).")
+    rp.p("The two tree ensembles receive the same information through a tree-appropriate variant of this pipeline. AgeCleaner, the engineered features and the "
+         "multiclass TargetEncoder for geo levels 2 and 3 are unchanged. The log transform and scaling are dropped, because tree splits do not change under monotone "
+         "transformations. The eight categorical columns and geo_level_1_id are integer-coded with an OrdinalEncoder instead of one-hot encoded; unseen codes become "
+         "missing values, which both ensembles handle natively. HistGradientBoosting treats these nine integer-coded columns as true categories (native categorical splits), "
+         "while the random forest splits them as ordered codes.")
 
     rp.h("3.4 Feature engineering", 2)
     abl = R.abl["candidates"]
@@ -393,10 +408,12 @@ def build(R: ResultsView) -> Report:
         (("Split. ", "b"), f"values and labels were merged on building_id and split 80/20, stratified by damage grade, with random_state = 42."),
         (("Model selection. ", "b"), "every experiment was scored by stratified 5-fold cross-validation (shuffled, random_state = 42) on the 80% split. "
                                      "We report the mean and standard deviation over folds. Identical folds across experiments allow paired comparisons."),
-        (("Tuning. ", "b"), f"the best of E4–E6 by mean CV micro-F1 was tuned over C ∈ {{{', '.join(f'{c:g}' for c in R.tun['grid'])}}} "
-                            "with GridSearchCV, using the same folds and scoring f1_micro. GridSearchCV then refitted the best setting on the whole 80% split."),
-        (("Final test. ", "b"), "the refitted model was scored once on the 20% holdout; the notebook asserts that this happens only once."),
-        (("Submission. ", "b"), f"the tuned configuration was refitted on all {n(R.sub['refit_rows'])} labelled buildings to predict the {n(R.sub['n_rows'])} test buildings."),
+        (("Tuning. ", "b"), f"for logistic regression, the best of E4–E6 by mean CV micro-F1 was tuned over C ∈ {{{', '.join(f'{c:g}' for c in R.tun['grid'])}}}. "
+                            f"The random forest ({R.models[RF]['n_candidates']} candidates) and HistGradientBoosting ({R.models[HGB]['n_candidates']} candidates) were tuned on small grids (Appendix B). "
+                            "All three used GridSearchCV with the same folds, scoring f1_micro, and then refitted the best setting on the whole 80% split."),
+        (("Final test. ", "b"), "each of the three refitted models was scored once on the 20% holdout; the notebook asserts that no model is scored twice."),
+        (("Final model. ", "b"), "the overall final model is the one with the highest mean CV micro-F1, so the holdout plays no part in the choice."),
+        (("Submission. ", "b"), f"the final model ({R.sub['model_label']}) was refitted on all {n(R.sub['refit_rows'])} labelled buildings to predict the {n(R.sub['n_rows'])} test buildings."),
     ])
     rp.h("4.2 Models", 2)
     rp.p("The multinomial logistic regression (Hosmer et al., 2013; Hastie et al., 2009) models the class probabilities with a softmax over linear scores:")
@@ -410,6 +427,14 @@ def build(R: ResultsView) -> Report:
     rp.eq("P(y=1) = 1 − P(y>1),   P(y=2) = P(y>1) − P(y>2),   P(y=3) = P(y>2)")
     rp.p("The two models are fitted independently, so their cumulative probabilities can occasionally cross. We enforce P(y>2) ≤ P(y>1) before taking differences, "
          "and we predict the class with the highest probability. Unlike the proportional-odds model (McCullagh, 1980), the two models do not share slopes.")
+    rff, hgf = R.models[RF]["fixed_params"], R.models[HGB]["fixed_params"]
+    rp.p(("Model 2, random forest. ", "b"), f"A random forest (Breiman, 2001) averages the class probabilities of {rff['n_estimators']} decision trees. Each tree is grown on a "
+         f"bootstrap sample (here of {pct(rff['max_samples'], 0)} of the training rows, which also bounds memory) and considers only a random subset of features at each split, "
+         "so the trees are decorrelated and their average has low variance. We tuned the minimum leaf size, which controls tree depth, and the number of features tried per split.")
+    rp.p(("Model 3, HistGradientBoosting. ", "b"), "Gradient boosting (Friedman, 2001) builds an additive model of small trees, F_m(x) = F_{m−1}(x) + η·h_m(x), where each new tree h_m is fitted "
+         f"to the gradient of the multiclass log-loss of the current model and η is the learning rate. scikit-learn's HistGradientBoostingClassifier bins every feature into at most 255 "
+         f"bins, which makes {hgf['max_iter']} boosting iterations on 200,000 rows fast, and splits categorical features natively. We fixed {hgf['max_iter']} iterations without early stopping "
+         "and tuned the learning rate and the maximum number of leaves per tree.")
     rp.h("4.3 Experimental design", 2)
     rp.p(f"Each experiment changes one thing relative to its predecessor (Table {rp.next_tab()}).")
     rp.table(["ID", "Configuration", "Question answered"], [
@@ -421,6 +446,8 @@ def build(R: ResultsView) -> Report:
         ["E5", "E4 with class_weight='balanced'", "Does reweighting help the rare class?"],
         ["E6", "E4 as ordinal (two cumulative binary LRs)", "Does exploiting the order help?"],
     ], "Experiment design. All logistic models use C = 1 before tuning.", widths=[1.2, 8.0, 7.0])
+    rp.p(f"The tree ensembles were not put through E0–E6 again. To keep the three-model comparison fair, both use exactly the information of the tuned logistic configuration "
+         f"({R.best}): structure, geo_level_1_id, target-encoded geo levels 2 and 3, the age flag and the kept engineered feature(s).")
     rp.h("4.4 Evaluation metrics", 2)
     rp.p("Micro-averaged F1 is the competition metric. For single-label multiclass prediction it equals accuracy. Macro-averaged F1 gives each grade equal weight and "
          "so shows performance on the rare grade 1. On the holdout we also report per-class precision and recall and a row-normalised confusion matrix. "
@@ -429,15 +456,14 @@ def build(R: ResultsView) -> Report:
 
     # ------------------------------------------------------------ 5 results
     rp.h("5. Experimental Study and Analysis", 1)
-    rp.h("5.1 Cross-validation results", 2)
+    rp.h("5.1 Model 1: logistic-regression experiments", 2)
     rows = [[k, v["description"], R.cv_cell(k), R.cv_cell(k, "f1_macro"), f"{R.rec(k, 1):.3f}"] for k, v in ex.items()]
     rows.append([f"{R.best}*", f"{ex[R.best]['description']}, tuned C = {R.best_C:g}",
                  f"{R.tun['best_f1_micro_mean']:.4f} ± {R.tun['best_f1_micro_std']:.4f}", f"{R.tun['best_f1_macro_mean']:.4f}", "–"])
-    rp.p(f"Table {rp.next_tab()} and Figure {rp.next_fig()} summarise the experiments.")
+    rp.p(f"Table {rp.next_tab()} summarises the experiments; Appendix A, Figure A1 shows them as a chart.")
     rp.table(["ID", "Description", "Micro-F1 (mean ± sd)", "Macro-F1 (mean ± sd)", "Grade-1 recall"], rows,
-             "Stratified 5-fold CV results on the 80% training split. * = tuned final model.",
+             "Stratified 5-fold CV results of the logistic-regression experiments on the 80% training split. * = tuned logistic model.",
              widths=[1.2, 6.3, 3.3, 3.3, 2.2], font_size=9, bold_rows=(len(rows) - 1,))
-    rp.figure("fig07_experiments", "CV micro-F1 by experiment (error bars: ±1 sd over folds). Orange marks the configuration selected for tuning.")
     rp.p(f"Structure alone (E1) improves on the {f3(base)} baseline to {f3(R.mic('E1'))}. That is a real gain, but most buildings still end up in the majority class. "
          f"Coarse location (E2) adds {pp(geo1_gain)}, and target-encoded fine location (E3) adds a further {pp(te_gain)}, the largest single step in the study. "
          f"The macro-F1 rises from {f3(R.mac('E1'))} to {f3(R.mac('E3'))} along the same path. Engineered features (E4) change micro-F1 by only {pp(fe_gain, 2)}. "
@@ -448,38 +474,37 @@ def build(R: ResultsView) -> Report:
          f"Grade-1 recall rises from {R.rec('E4', 1):.3f} to {R.rec('E5', 1):.3f}, and grade-2 recall falls from {R.rec('E4', 2):.3f} to {R.rec('E5', 2):.3f}. "
          f"The ordinal model (E6) scores {f4(R.mic('E6'))} micro-F1 against {f4(R.mic('E4'))} for the multinomial model. Section 6.1 discusses both. "
          f"Since micro-F1 is the competition metric and the tuning criterion, {best_desc} was carried forward to tuning.")
-    rp.h("5.2 Hyperparameter tuning", 2)
+    rp.h("5.2 Model 1: tuning C", 2)
     trows = R.tun["rows"]
     lo = min(trows, key=lambda r: r["C"])
     spread = max(r["mean"] for r in trows) - min(r["mean"] for r in trows)
     rp.p(f"GridSearchCV selected C = {R.best_C:g} with CV micro-F1 {f4(R.tun['best_f1_micro_mean'])} ± {f4(R.tun['best_f1_micro_std'])}. The curve is essentially flat "
-         f"(Appendix B, Figure B1): across four orders of magnitude of C, mean micro-F1 varies by only {spread * 100:.2f} percentage points, less than one fold standard deviation. "
+         f"(Appendix B, Table B1 and Figure B1): across four orders of magnitude of C, mean micro-F1 varies by only {spread * 100:.2f} percentage points, less than one fold standard deviation. "
          f"With {n(R.split['n_train'])} training rows and only {R.coef['n_features']} model features, the L2 penalty barely matters, so the choice of C is not critical. Strong regularisation "
          f"(C = {lo['C']:g}) mainly costs macro-F1 ({f4(lo['f1_macro_mean'])} vs {f4(R.tun['best_f1_macro_mean'])}), because it shrinks the coefficients that separate the rare grade 1.")
-    rp.h("5.3 Holdout evaluation", 2)
+    rp.h("5.3 Model 1: holdout evaluation", 2)
     rp.p(f"On the untouched holdout ({n(hold['n'])} buildings), the tuned model achieves ", (f"micro-F1 = {f4(H_mic)}", "b"), " and ", (f"macro-F1 = {f4(H_mac)}", "b"),
          f". These are within {abs(H_mic - R.tun['best_f1_micro_mean']) * 100:.2f} percentage points of the CV estimate, which confirms that model selection did not overfit. "
-         f"Per-class results are in Table {rp.next_tab()} and the confusion matrix in Figure {rp.next_fig()}.")
+         f"Per-class results are in Table {rp.next_tab()} and the confusion matrix in Appendix A, Figure A2.")
     rp.table(["Grade", "Precision", "Recall", "F1", "Support"],
              [[f"{c}", f3(R.pc(c, 'precision')), f3(R.pc(c, 'recall')), f3(R.pc(c, 'f1')), n(R.pc(c, 'support'))] for c in (1, 2, 3)],
-             "Per-class holdout metrics of the final model.", widths=[2.0, 2.6, 2.6, 2.6, 2.6])
-    rp.figure("fig09_confusion_matrix", "Row-normalised holdout confusion matrix (counts in brackets).", 10.5)
+             "Per-class holdout metrics of the tuned logistic model.", widths=[2.0, 2.6, 2.6, 2.6, 2.6])
     rp.p(f"Grade 2 is recalled best ({pct(R.pc(2, 'recall'))}), then grade 3 ({pct(R.pc(3, 'recall'))}). Grade 1 is hardest ({pct(R.pc(1, 'recall'))}), "
          f"and {pct(R.cmn(1, 2))} of grade-1 buildings are predicted as grade 2. Almost all errors are between adjacent grades. Only {pct(R.cmn(3, 1), 2)} of grade-3 buildings are "
          f"predicted as grade 1, and only {pct(R.cmn(1, 3), 2)} of grade-1 buildings as grade 3. The model therefore rarely makes the costly mistake of calling a destroyed building safe.")
-    rp.h("5.4 Prioritisation analysis", 2)
+    rp.h("5.4 Model 1: prioritisation analysis", 2)
     rp.p(f"To connect the model to the problem statement, we ranked holdout buildings by predicted P(grade 3). We then measured the share of true grade-3 buildings found as "
-         f"inspectors work down the list (Figure {rp.next_fig()}, Table {rp.next_tab()}).")
-    rp.figure("fig10_prioritisation_curve", "Cumulative share of grade-3 buildings found against the share of buildings inspected, holdout. The dashed line is a random inspection order.", 12.5)
+         f"inspectors work down the list (Figure {rp.next_fig()}, Table {rp.next_tab()}). The figure already includes the two tree ensembles, which are compared in Section 5.7.")
+    fig_capture = rp.figure("fig14_capture_comparison", "Cumulative share of grade-3 buildings found against the share of buildings inspected, holdout, for the three tuned models. The dashed line is a random inspection order.", 9.5)
     rp.table(["Top x% inspected", "Buildings inspected", "Grade-3 captured", "Lift vs random", "Grade-3 share within list"],
              [[f"{k}%", n(R.prio['at_fraction'][str(k)]['n_inspected']), pct(R.cap(k)), f"{R.lift(k):.2f}×", pct(R.prec_top(k))] for k in (10, 20, 30)],
-             f"Capture rates on the holdout ({n(R.prio['n_grade3'])} grade-3 buildings, base rate {pct(R.prio['base_rate_grade3'])}).",
+             f"Capture rates of the tuned logistic model on the holdout ({n(R.prio['n_grade3'])} grade-3 buildings, base rate {pct(R.prio['base_rate_grade3'])}).",
              widths=[3.0, 3.2, 3.2, 3.0, 3.8])
     rp.p(f"Inspecting the top 10% of buildings finds {pct(R.cap(10))} of all grade-3 buildings, {R.lift(10):.1f} times what a random order finds. "
          f"Within that top decile, {pct(R.prec_top(10))} of buildings are actually grade 3, against a base rate of {pct(R.prio['base_rate_grade3'])}. "
          f"At 30% the capture rate is {pct(R.cap(30))}. The ROC-AUC for grade 3 against the other grades is {R.prio['auc_grade3_vs_rest']:.3f}. "
          "For an inspection agency, this means the first teams in the field would spend most of their time at buildings that really are destroyed.")
-    rp.h("5.5 Interpretation of coefficients", 2)
+    rp.h("5.5 Model 1: interpretation of coefficients", 2)
     src = R.coef["source"]
     up, down = R.coef["top_raising"], R.coef["top_lowering"]
     mat = R.coef["materials"]
@@ -490,7 +515,7 @@ def build(R: ResultsView) -> Report:
          f"Two groups are excluded from the figure. Location features are discussed below. The other group is {R.coef['n_excluded_rare']} flags and dummies present in fewer than "
          f"{pct(R.coef['min_prevalence'], 0)} of buildings, whose coefficients rest on very few buildings and are unstable. For example, {pretty_feature(rare[0]['feature'])} "
          f"has an odds ratio of {rare[0]['odds_ratio']:.2f} but applies to only {pct(rare[0]['prevalence'], 2)} of buildings.")
-    rp.figure("fig11_coefficients", "Top 15 risk-raising (red) and risk-lowering (blue) features for grade-3 damage, as odds ratios on a log scale. Location features and flags present in fewer than 1% of buildings are excluded.", 14.5)
+    rp.figure("fig11_coefficients", "Logistic regression: top 15 risk-raising (red) and risk-lowering (blue) features for grade-3 damage, as odds ratios on a log scale. Location features and flags present in fewer than 1% of buildings are excluded.", 10)
     rp.p("The strongest risk-raising features are ", ", ".join(f"{pretty_feature(x['feature'])} (OR {x['odds_ratio']:.2f})" for x in up[:4]),
          ". The strongest protective features are ", ", ".join(f"{pretty_feature(x['feature'])} (OR {x['odds_ratio']:.2f})" for x in down[:4]), ". "
          "For superstructure materials, holding everything else fixed, the odds ratios are: mud-mortar stone "
@@ -499,7 +524,7 @@ def build(R: ResultsView) -> Report:
          f"cement-mortar brick {mat['has_superstructure_cement_mortar_brick']['odds_ratio']:.2f} and engineered RC {mat['has_superstructure_rc_engineered']['odds_ratio']:.2f}. "
          "In plain language, buildings with heavy, brittle walls of stone or mud bonded only by mud mortar break apart under strong shaking. Engineered reinforced-concrete "
          "frames and cement-bonded masonry hold together and are much more likely to escape with light damage. Older buildings are also at higher risk. The anonymised foundation and roof codes "
-         f"that the model treats as protective (foundation i, roof x) are the same ones that the exploration (Figure {fig_found}) linked to low damage. That the model and the raw data agree, and that both "
+         f"that the model treats as protective (foundation i, roof x) are the same ones that the exploration (Appendix C, Figure C1) linked to low damage. That the model and the raw data agree, and that both "
          "match engineering experience, gives some confidence that the model has learned real effects rather than artefacts. The engineered-RC odds ratio is smaller in "
          "magnitude than its raw grade-3 rate would suggest, because foundation, roof and floor types that come with RC construction already carry part of that effect.")
     loc = R.coef["location_top"]
@@ -507,10 +532,74 @@ def build(R: ResultsView) -> Report:
          ", ".join(f"{x['feature']} with OR {x['odds_ratio']:.2f}" for x in loc[:2]),
          "). They describe where the ground shook hardest, not what makes a building vulnerable, so they matter for prediction but give an engineer nothing to act on.")
 
+    # ------------------------------------------------------------ 5.6 / 5.7 three models
+    rfm, hgm = R.models[RF], R.models[HGB]
+
+    def spread(m):
+        v = [r["f1_micro_mean"] for r in m["rows"]]
+        return max(v) - min(v)
+
+    rp.h("5.6 Models 2 and 3: tuning the tree ensembles", 2)
+    rp.p(f"The random forest was tuned over {R.grid_txt(RF)} ({rfm['n_candidates']} candidates × 5 folds, {rfm['time_s'] / 60:.0f} minutes). The best setting was "
+         f"{R.params_txt(RF)}, with CV micro-F1 {R.mcv_cell(RF)} and macro-F1 {f4(R.mcv(RF, 'f1_macro'))}. "
+         f"HistGradientBoosting was tuned over {R.grid_txt(HGB)} ({hgm['n_candidates']} candidates, {hgm['time_s'] / 60:.0f} minutes). The best setting was "
+         f"{R.params_txt(HGB)}, with CV micro-F1 {R.mcv_cell(HGB)} and macro-F1 {f4(R.mcv(HGB, 'f1_macro'))}. "
+         f"As for C in the logistic model, the grids are fairly flat: the best and worst candidates differ by {spread(rfm) * 100:.2f} percentage points for the forest and "
+         f"{spread(hgm) * 100:.2f} for boosting (Appendix B, Tables B2 and B3). The grids are deliberately small so that the whole study runs on an 8 GB laptop, "
+         "so a wider search could add a little more, but it is unlikely to change the ranking of the models.")
+
+    rp.h("5.7 Three-model comparison and choice of the final model", 2)
+    rows3 = [[R.label(k) + (" *" if k == F else ""), R.mcv_cell(k), f4(R.mcv(k, "f1_macro")), f4(R.mho(k)), f4(R.mho(k, "f1_macro")),
+              f3(R.mrec(k, 1)), f3(R.mrec(k, 3)), pct(R.mcap(k)), f3(R.mauc(k))] for k in R.order]
+    rp.p(f"Table {rp.next_tab()} and Figure {rp.next_fig()} compare the three tuned models. All three use the same features, were tuned on the same folds and were "
+         "scored once on the same holdout.")
+    rp.table(["Model", "CV micro-F1 (mean ± sd)", "CV macro-F1", "Holdout micro-F1", "Holdout macro-F1", "Holdout recall g1", "Holdout recall g3",
+              "Top-20% capture", "Grade-3 AUC"], rows3,
+             "Three tuned models. CV: stratified 5-fold on the 80% split; holdout: 20%, scored once per model. * = final model (highest CV micro-F1).",
+             widths=[3.0, 2.7, 1.5, 1.6, 1.6, 1.5, 1.5, 1.5, 1.4], font_size=8.5, bold_rows=(R.order.index(F),))
+    rp.figure("fig13_model_comparison", "CV (mean ± sd over folds) and holdout micro- and macro-F1 of the three tuned models. The dashed line is the majority-class baseline.", 12.5)
+    runner = R.final["runner_up"]
+    if tree_won:
+        rp.p(f"{FL} has the highest CV micro-F1 and is therefore our final model. It beats the runner-up ({R.label(runner)}) by {pp(R.final['cv_gain_over_runner_up'], 2)} "
+             f"in CV, winning {R.final['folds_won_vs_runner_up']} of 5 folds, and logistic regression by {pp(gain_cv, 2)}. The holdout confirms the ranking against logistic "
+             f"regression: {f4(R.mho(F))} against {f4(R.mho(LR))} micro-F1 ({pp(gain_ho, 2)}) and {f4(R.mho(F, 'f1_macro'))} against {f4(R.mho(LR, 'f1_macro'))} macro-F1. "
+             f"The fold standard deviations are about {R.mcv_sd(F) * 100:.2f} percentage points, so a gain of this size is consistent across folds, but it is modest. "
+             "The trees improve because they can combine features without being told to, for example a material that is only dangerous in strongly shaken areas.")
+        if R.mho(runner) > R.mho(F):
+            rp.p(f"The two ensembles are practically tied. On the holdout the runner-up ({R.label(runner)}) is even slightly ahead, {f4(R.mho(runner))} against "
+                 f"{f4(R.mho(F))} micro-F1 ({pp(R.mho(runner) - R.mho(F), 2)}), a difference well inside the fold-to-fold noise. We keep {FL} as the final model "
+                 "because the choice was fixed in advance to rest on cross-validation, which averages five validation sets instead of one; switching after seeing "
+                 "the holdout would turn the holdout into a selection set. "
+                 + (f"{FL} also has the higher macro-F1 on the holdout ({f4(R.mho(F, 'f1_macro'))} against {f4(R.mho(runner, 'f1_macro'))})."
+                    if R.mho(F, "f1_macro") > R.mho(runner, "f1_macro") else ""))
+    else:
+        rp.p(f"Logistic regression has the highest CV micro-F1 and therefore remains the final model; the best tree ensemble ({R.label(runner)}) is "
+             f"{pp(-R.final['cv_gain_over_runner_up'], 2)} behind it. On these features, the extra flexibility of the trees did not translate into higher accuracy.")
+    rp.p(f"For the inspection use case the three rankings are close (Figure {fig_capture}): the top 20% of the list captures "
+         + ", ".join(f"{pct(R.mcap(k))} ({R.label(k)})" for k in R.order)
+         + f" of grade-3 buildings, and the grade-3 ROC-AUC ranges from {f3(min(R.mauc(k) for k in R.order))} to {f3(max(R.mauc(k) for k in R.order))}. "
+         "Any of the three models would therefore send the first inspection teams to largely the same high-risk buildings.")
+    if tree_won:
+        rp.p(f"Figure {rp.next_fig()} shows the holdout confusion matrix of {FL}. As for logistic regression, almost all errors are between adjacent grades: "
+             f"{pct(R.fcm(1, 2))} of grade-1 buildings are predicted as grade 2 and {pct(R.fcm(3, 2))} of grade-3 buildings as grade 2, while only {pct(R.fcm(3, 1), 2)} "
+             f"of grade-3 buildings are predicted as grade 1. Grade-1 recall is {pct(R.mrec(F, 1))} (logistic regression: {pct(R.mrec(LR, 1))}) and grade-3 recall is "
+             f"{pct(R.mrec(F, 3))} ({pct(R.mrec(LR, 3))}).")
+        rp.figure("fig15_confusion_final", f"Row-normalised holdout confusion matrix of the final model, {FL} (counts in brackets).", 8)
+    imp_f = R.top_importance(F, 4)
+    rp.p(f"Tree ensembles have no coefficients, so we complement the odds ratios with ", ("permutation importance", "i"),
+         f" (Breiman, 2001): the drop in micro-F1 when one original input column is randomly shuffled, measured on a random subsample of 10,000 holdout buildings with five "
+         f"repeats. Because the whole pipeline is permuted, geo_level_3_id, for example, covers all three of its target-encoded columns. We prefer this to impurity-based importance, "
+         f"which is biased toward continuous and high-cardinality columns. Figure {rp.next_fig()} shows the results for all three models. For {FL} the most important columns are "
+         + ", ".join(f"{pretty_feature(x['feature'])} ({x['mean']:.3f})" for x in imp_f)
+         + ". All three models rank the fine location levels (geo levels 3 and 2) first, followed by age and construction attributes such as superstructure material, "
+         "which agrees with the exploration and with the logistic coefficients. Permutation importance tells us how much a model relies on a column, not in which direction it pushes "
+         "the risk; that direction is exactly what the logistic odds ratios provide.")
+    fig_imp = rp.figure("fig16_permutation_importance", "Permutation importance (drop in holdout micro-F1 when a column is shuffled; mean ± sd over 5 repeats on 10,000 holdout buildings) of the 12 most important input columns.", 11)
+
     # ------------------------------------------------------------ 6 highlights
     rp.h("6. Highlights", 1)
     rp.h("6.1 Ordinal versus multinomial logistic regression", 2)
-    rp.figure("fig12_recall_comparison", "Per-class CV recall for the multinomial (E4), class-balanced (E5) and ordinal (E6) models.", 13)
+    rp.figure("fig12_recall_comparison", "Per-class CV recall for the multinomial (E4), class-balanced (E5) and ordinal (E6) models.", 10.5)
     if ord_mic <= 0.001:
         rp.p(f"Exploiting the ordering of damage grades seems natural, but on these data it ", ("did not help", "b"),
              f": the ordinal model changed micro-F1 by {pp(ord_mic, 2)} and macro-F1 by {pp(ord_mac, 2)} compared with the multinomial model on identical features "
@@ -538,13 +627,25 @@ def build(R: ResultsView) -> Report:
          f"It produced the largest gain in the study, {pp(te_gain)} micro-F1 and {pp(R.mac('E3') - R.mac('E2'))} macro-F1 over E2. "
          "Two safeguards keep this honest. First, cross-fitting inside fit_transform means that no training building's encoding uses its own label. Second, the encoder "
          "is part of the pipeline and so is refitted inside every outer CV fold and inside GridSearchCV. The close agreement between CV and holdout scores "
-         f"({f4(R.tun['best_f1_micro_mean'])} vs {f4(H_mic)}) is consistent with there being no leakage.")
+         f"({f4(R.tun['best_f1_micro_mean'])} vs {f4(H_mic)}) is consistent with there being no leakage. The same encoder feeds the two tree ensembles, "
+         f"and for all three models the location columns are among the most important inputs (Figure {fig_imp}).")
+    rp.h("6.3 Accuracy versus interpretability", 2)
+    if tree_won:
+        rp.p(f"Adding two tree ensembles answers a question the logistic-only study could not: how much accuracy does transparency cost? On identical features, "
+             f"the best tree ensemble ({FL}) gains {pp(gain_cv, 2)} CV micro-F1 and {pp(gain_ho, 2)} holdout micro-F1 over logistic regression, while the prioritisation "
+             f"curves are almost identical ({pct(R.mcap(F))} against {pct(R.mcap(LR))} of grade-3 buildings in the top 20%). "
+             "The price of transparency is therefore real but small. We use the most accurate model for the competition submission, but for explaining risk to engineers "
+             "and to the public the logistic model's odds ratios remain the better tool, and the permutation importances show that both kinds of model rely on the same signals.")
+    else:
+        rp.p("Adding two tree ensembles answers a question the logistic-only study could not: how much accuracy does transparency cost? On identical features, the answer "
+             f"is nothing: the best tree ensemble ({R.label(runner)}) did not beat logistic regression in cross-validation, so the interpretable model is also the final one.")
 
     # ------------------------------------------------------------ 7 limitations
     rp.h("7. Limitations", 1)
     rp.bullets([
-        (("Linear decision boundaries. ", "b"), "Logistic regression cannot represent interactions it is not given, such as material × region. Tree ensembles are known to do better "
-         "on this competition, and we excluded them by design."),
+        (("Linear model versus black boxes. ", "b"), "Logistic regression cannot represent interactions it is not given, such as material × region. The tree ensembles can, "
+         "but they offer only importance scores, not signed, per-unit effects. The original brief excluded tree models; they were added later at the course's request, "
+         "with the same features and folds, but the tree study is less deep than the logistic one (no separate feature experiments, small tuning grids)."),
         (("Location as a proxy. ", "b"), "Region ids stand in for shaking intensity, soil and distance to the fault. The model would not transfer to a different earthquake, "
          f"and {pct(d['test_geo3_unseen_share'], 2)} of test buildings fall in unseen local areas and receive only the global prior."),
         (("Labels and features recorded after the event. ", "b"), "Damage grades come from survey teams and may be noisy near grade boundaries. Some attributes, such as floor count before the earthquake, "
@@ -552,7 +653,8 @@ def build(R: ResultsView) -> Report:
         (("Anonymised categories. ", "b"), "Letter codes limit how far the coefficients can be explained in engineering terms."),
         (("Associational, not causal. ", "b"), "Odds ratios describe associations conditional on the other features. Collinear inputs (height and floors) share credit, and the "
          "softmax parameterisation makes dummy coefficients relative to an average level."),
-        (("Single split. ", "b"), "The holdout estimate comes from one 20% split. CV standard deviations are small, but no confidence interval for the holdout score was computed."),
+        (("Single split. ", "b"), "The holdout estimate comes from one 20% split. CV standard deviations are small, but no confidence interval for the holdout score was computed, "
+         "and the differences between the three models are only a few fold standard deviations."),
     ])
 
     # ------------------------------------------------------------ 8 future
@@ -563,24 +665,30 @@ def build(R: ResultsView) -> Report:
         (("Proper cumulative-link model. ", "b"), "Fit a proportional-odds model with shared slopes (for example statsmodels OrderedModel) and test the proportional-odds assumption."),
         (("Cost-sensitive thresholds and calibration. ", "b"), "Choose decision thresholds from inspection capacity and the relative cost of missing a destroyed building, and calibrate probabilities (Platt or isotonic)."),
         (("Uncertainty and validation. ", "b"), "Bootstrap confidence intervals for holdout metrics, and spatially grouped CV (by geo_level_2) to estimate performance in unseen areas."),
-        (("Benchmarking and deployment. ", "b"), "Measure the accuracy cost of interpretability against gradient boosting, and package the pipeline as a triage tool for field teams."),
+        (("Explaining and extending the ensembles. ", "b"), "Use SHAP values to give the tree models per-building explanations, search larger grids (or try LightGBM/CatBoost), "
+         "and package the final pipeline as a triage tool for field teams."),
     ])
 
     # ------------------------------------------------------------ 9 conclusion
     rp.h("9. Conclusion", 1)
-    rp.p(f"We asked whether a building's structure and location can predict its earthquake damage well enough to prioritise inspections. With a transparent, leakage-safe "
-         f"logistic-regression pipeline, the answer is a qualified yes. The final model reaches a holdout micro-F1 of {f3(H_mic)} (macro-F1 {f3(H_mac)}) against a "
-         f"{f3(base)} baseline, and its ranking finds {pct(R.cap(20))} of destroyed buildings in the first 20% of inspections. Location, encoded with cross-fitted "
-         f"target encoding, contributed the most. Construction material contributed the most interpretable signal: mud-mortar stone raises risk and engineered RC lowers it. "
-         f"An ordinal reformulation {'did not improve' if ord_mic <= 0.001 else 'improved'} on the multinomial model, and class weighting traded overall accuracy for "
-         "recall of the rare class. The remaining errors are mostly between adjacent grades, and the largest further gains are likely to come from physical shaking data "
-         "rather than from more complex models.")
+    rp.p(f"We asked whether a building's structure and location can predict its earthquake damage well enough to prioritise inspections. With a leakage-safe pipeline "
+         f"and three classifiers, the answer is a qualified yes. The tuned logistic regression reaches a holdout micro-F1 of {f3(H_mic)} (macro-F1 {f3(H_mac)}) against a "
+         f"{f3(base)} baseline; the random forest reaches {f3(R.mho(RF))} and HistGradientBoosting {f3(R.mho(HGB))}. "
+         + (f"Chosen by cross-validation, {FL} is our final model, {pp(gain_cv, 2)} ahead of logistic regression in CV and {pp(gain_ho, 2)} on the holdout. "
+            if tree_won else "Chosen by cross-validation, logistic regression remains the final model. ")
+         + f"Its ranking finds {pct(R.mcap(F))} of destroyed buildings in the first 20% of inspections, and all three models rank buildings almost equally well. "
+         f"Location, encoded with cross-fitted target encoding, contributed the most for every model. Construction material contributed the most interpretable signal: "
+         f"mud-mortar stone raises risk and engineered RC lowers it. An ordinal reformulation {'did not improve' if ord_mic <= 0.001 else 'improved'} on the multinomial model, "
+         "and class weighting traded overall accuracy for recall of the rare class. The small gap between the linear model and the tree ensembles suggests that the largest "
+         "further gains will come from better information, such as physical shaking data, rather than from more complex models.")
 
     # ------------------------------------------------------------ references
     rp.h("References", 1)
     refs = [
+        "Breiman, L. (2001). Random forests. Machine Learning, 45(1), 5–32.",
         "DrivenData. (2019). Richter's Predictor: Modeling Earthquake Damage [Data set and competition]. https://www.drivendata.org/competitions/57/nepal-earthquake/",
         "Frank, E., & Hall, M. (2001). A simple approach to ordinal classification. In Proceedings of the 12th European Conference on Machine Learning (ECML), LNCS 2167, 145–156. Springer.",
+        "Friedman, J. H. (2001). Greedy function approximation: A gradient boosting machine. Annals of Statistics, 29(5), 1189–1232.",
         "Hastie, T., Tibshirani, R., & Friedman, J. (2009). The Elements of Statistical Learning (2nd ed.). Springer.",
         "Hosmer, D. W., Lemeshow, S., & Sturdivant, R. X. (2013). Applied Logistic Regression (3rd ed.). Wiley.",
         "Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. Computing in Science & Engineering, 9(3), 90–95.",
@@ -599,26 +707,39 @@ def build(R: ResultsView) -> Report:
     # ------------------------------------------------------------ appendix
     rp.page_break()
     rp.h("Appendix", 1)
-    rp.h("A. Full cross-validation results", 2)
+    rp.h("A. Full cross-validation results (logistic regression)", 2)
     rp.table(["ID", "Micro-F1", "Macro-F1", "Recall g1", "Recall g2", "Recall g3", "Max solver iter"],
              [[k, R.cv_cell(k), R.cv_cell(k, "f1_macro"), f3(R.rec(k, 1)), f3(R.rec(k, 2)), f3(R.rec(k, 3)),
                v["max_n_iter"]] for k, v in ex.items()],
              "All experiments: 5-fold CV mean ± sd; recall is the per-class CV mean; max solver iterations over the 5 folds.",
              widths=[1.1, 3.2, 3.2, 1.9, 1.9, 1.9, 2.4], font_size=8.5)
-    rp.h("B. Regularisation path", 2)
-    rp.table(["C", "Micro-F1 (mean)", "Micro-F1 (sd)", "Macro-F1 (mean)", "Max solver iterations"],
-             [[f"{r['C']:g}", f4(r["mean"]), f4(r["std"]), f4(r["f1_macro_mean"]), int(r["max_n_iter"])] for r in trows],
-             f"GridSearchCV results for {R.best}.", widths=[2.0, 3.2, 3.0, 3.2, 3.6])
+    _appendix_figure(rp, "fig07_experiments", "A1", "CV micro-F1 by logistic-regression experiment (error bars: ±1 sd over folds). Orange marks the configuration selected for tuning.", 13.5)
+    _appendix_figure(rp, "fig09_confusion_matrix", "A2", "Row-normalised holdout confusion matrix of the tuned logistic model (counts in brackets).", 8.5)
+    rp.h("B. Tuning grids", 2)
+    _appendix_table(rp, "B1", ["C", "Micro-F1 (mean)", "Micro-F1 (sd)", "Macro-F1 (mean)", "Max solver iterations"],
+                    [[f"{r['C']:g}", f4(r["mean"]), f4(r["std"]), f4(r["f1_macro_mean"]), int(r["max_n_iter"])] for r in trows],
+                    f"Model 1: GridSearchCV results for logistic regression ({R.best}) over C.")
     _appendix_figure(rp, "fig08_c_tuning", "B1", "CV micro-F1 as a function of C (log scale). The dashed line marks the selected value.", 11.5)
+    for k, lab in [(RF, "B2"), (HGB, "B3")]:
+        m = R.models[k]
+        pnames = list(m["grid"])
+        fixed_txt = ", ".join(f"{a} = {v}" for a, v in m["fixed_params"].items())
+        _appendix_table(rp, lab, pnames + ["Micro-F1 (mean)", "Micro-F1 (sd)", "Macro-F1 (mean)", "Fit time per fold (s)"],
+                        [[str(r["params"][a]) for a in pnames] + [f4(r["f1_micro_mean"]), f4(r["f1_micro_std"]), f4(r["f1_macro_mean"]), f"{r['mean_fit_time_s']:.0f}"]
+                         for r in m["rows"]],
+                        f"Model {2 if k == RF else 3}: GridSearchCV results for {m['label']} (5 folds, scored by f1_micro). "
+                        f"Fixed settings: {fixed_txt}. Best: {R.params_txt(k)}.")
     rp.h("C. Additional exploration figures", 2)
-    _appendix_figure(rp, "fig05_numeric_distributions", "C1", "Distributions of age, area, height (log scale) and floors, stacked by damage grade. Placeholder ages are excluded.")
-    _appendix_figure(rp, "fig06_correlation", "C2", "Spearman correlations among numeric and selected material features and the damage grade.", 12.5)
+    _appendix_figure(rp, "fig02_damage_by_foundation_roof", "C1", "Damage-grade mix by foundation type (left) and roof type (right), training split. Bars are sorted by grade-3 share; n is the number of buildings.")
+    _appendix_figure(rp, "fig05_numeric_distributions", "C2", "Distributions of age, area, height (log scale) and floors, stacked by damage grade. Placeholder ages are excluded.")
+    _appendix_figure(rp, "fig06_correlation", "C3", "Spearman correlations among numeric and selected material features and the damage grade.", 12.5)
     rp.h("D. Reproducibility", 2)
     m = R.r["meta"]
     rp.p(f"Environment: Python {m['python']}, scikit-learn {m['sklearn']} (Pedregosa et al., 2011), pandas {m['pandas']} (McKinney, 2010), NumPy {m['numpy']}, matplotlib {m['matplotlib']} (Hunter, 2007), seaborn {m['seaborn']}. "
          f"random_state = {m['random_state']} everywhere; {m['cv']}. The full pipeline runs with ", ("python -m src.run_all", "b"),
          f" (about {m.get('runtime_minutes', '–')} minutes for the notebook). Every number in this report is read from outputs/results.json, which the notebook writes. "
-         f"The submission file outputs/submission.csv has {n(R.sub['n_rows'])} rows with columns building_id, damage_grade (integers 1–3). "
+         f"The submission file outputs/submission.csv comes from the final model ({R.sub['model_label']}, refitted on all {n(R.sub['refit_rows'])} labelled buildings) "
+         f"and has {n(R.sub['n_rows'])} rows with columns building_id, damage_grade (integers 1–3). "
          f"Its predicted class shares are grade 1 {pct(R.sub['predicted_class_share']['1'])}, grade 2 {pct(R.sub['predicted_class_share']['2'])} "
          f"and grade 3 {pct(R.sub['predicted_class_share']['3'])}.")
     rp.h("E. Contribution statement", 2)
@@ -629,6 +750,35 @@ def build(R: ResultsView) -> Report:
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _field(footer, "PAGE", "1")
     return rp
+
+
+def _appendix_table(rp, label, header, rows, caption, font_size=9):
+    c = rp.doc.add_paragraph(style="Caption")
+    c.paragraph_format.keep_with_next = True
+    c.paragraph_format.space_after = Pt(3)
+    r = c.add_run(f"Table {label}. ")
+    r.bold = True
+    c.add_run(caption)
+    t = rp.doc.add_table(rows=1, cols=len(header))
+    t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for i, htxt in enumerate(header):
+        cell = t.rows[0].cells[i]
+        cell.text = ""
+        run = cell.paragraphs[0].add_run(htxt)
+        run.bold = True
+        run.font.size = Pt(font_size)
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        _shade(cell, "142340")
+    for ri, row in enumerate(rows):
+        cells = t.add_row().cells
+        for i, v in enumerate(row):
+            cells[i].text = ""
+            run = cells[i].paragraphs[0].add_run(str(v))
+            run.font.size = Pt(font_size)
+            if ri % 2 == 1:
+                _shade(cells[i], "F1F5FB")
+    rp.doc.add_paragraph().paragraph_format.space_after = Pt(2)
 
 
 def _appendix_figure(rp, name, label, caption, width_cm=15):

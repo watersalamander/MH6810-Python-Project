@@ -221,7 +221,8 @@ def plot_c_tuning(cv_results: pd.DataFrame, best_c: float):
     return _save(fig, "fig08_c_tuning")
 
 
-def plot_confusion(cm_norm, cm_counts):
+def plot_confusion(cm_norm, cm_counts, name="fig09_confusion_matrix",
+                   title="Holdout confusion matrix (row-normalised)"):
     cm_norm, cm_counts = np.asarray(cm_norm), np.asarray(cm_counts)
     cmap = LinearSegmentedColormap.from_list("blues", ["#f4f8fd", "#86b6ef", "#2a78d6", "#104281"])
     fig, ax = plt.subplots(figsize=(6.4, 5.4))
@@ -236,8 +237,8 @@ def plot_confusion(cm_norm, cm_counts):
     ax.set_ylabel("Actual")
     ax.grid(False)
     fig.colorbar(im, ax=ax, shrink=0.8, format=PercentFormatter(1.0), label="Share of actual class")
-    ax.set_title("Holdout confusion matrix (row-normalised)")
-    return _save(fig, "fig09_confusion_matrix")
+    ax.set_title(title)
+    return _save(fig, name)
 
 
 def plot_capture(share_inspected, share_captured, summary):
@@ -329,7 +330,7 @@ def plot_coefficients_compact(raising, lowering, k=7):
     rows = sorted(raising[:k] + lowering[:k], key=lambda r: r["coef"])
     names = [pretty_feature(r["feature"]) for r in rows]
     orr = np.array([r["odds_ratio"] for r in rows])
-    fig, ax = plt.subplots(figsize=(7.2, 6.0))
+    fig, ax = plt.subplots(figsize=(7.2, 6.8))
     y = np.arange(len(rows))
     ax.barh(y, orr - 1, left=1, color=[RED if o > 1 else BLUE for o in orr], height=0.68)
     ax.set_xscale("log")
@@ -346,3 +347,87 @@ def plot_coefficients_compact(raising, lowering, k=7):
     ax.grid(axis="y", visible=False)
     ax.set_title(f"Top {k} risk-raising and protective features")
     return _save(fig, "fig11b_coefficients_slide")
+
+
+# ------------------------------------------------------------------ three-model comparison
+GREEN = "#1baf7a"
+MODEL_ORDER = ["logreg", "random_forest", "hist_gb"]
+MODEL_LABELS = {"logreg": "Logistic regression", "random_forest": "Random forest",
+                "hist_gb": "HistGradientBoosting"}
+MODEL_COLORS = {"logreg": BLUE, "random_forest": GREEN, "hist_gb": ORANGE}
+
+
+def plot_model_comparison(models: dict, baseline: float):
+    """Grouped bars: CV and holdout micro-/macro-F1 for the three tuned models."""
+    metrics = [("CV micro-F1", lambda m: m["cv"]["f1_micro"]["mean"], lambda m: m["cv"]["f1_micro"]["std"]),
+               ("Holdout micro-F1", lambda m: m["holdout"]["f1_micro"], None),
+               ("CV macro-F1", lambda m: m["cv"]["f1_macro"]["mean"], lambda m: m["cv"]["f1_macro"]["std"]),
+               ("Holdout macro-F1", lambda m: m["holdout"]["f1_macro"], None)]
+    keys = [k for k in MODEL_ORDER if k in models]
+    fig, ax = plt.subplots(figsize=(11, 4.8))
+    x = np.arange(len(metrics))
+    width = 0.8 / len(keys)
+    for i, k in enumerate(keys):
+        vals = [f(models[k]) for _, f, _ in metrics]
+        errs = [e(models[k]) if e else 0 for _, _, e in metrics]
+        xs = x + (i - (len(keys) - 1) / 2) * width
+        ax.bar(xs, vals, width * 0.92, yerr=errs, color=MODEL_COLORS[k], label=MODEL_LABELS[k],
+               capsize=3, error_kw={"ecolor": INK2, "elinewidth": 1})
+        for xi, v in zip(xs, vals):
+            ax.text(xi, v + 0.004, f"{v:.3f}", ha="center", fontsize=9.5)
+    ax.axhline(baseline, color=GRAY, linestyle="--", linewidth=1.2)
+    ax.text(x[-1] + 0.45, baseline + 0.003, f"majority baseline (micro) {baseline:.3f}", ha="right",
+            fontsize=9.5, color=INK2)
+    ax.set_xticks(x, [m[0] for m in metrics])
+    ax.set_ylim(0.55, 0.79)
+    ax.set_ylabel("F1")
+    ax.grid(axis="x", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=len(keys))
+    ax.set_title("Three tuned models: 5-fold CV (mean ± sd) and single holdout evaluation")
+    return _save(fig, "fig13_model_comparison")
+
+
+def plot_capture_comparison(curves: dict):
+    """curves: model key -> (share_inspected, share_captured, summary)."""
+    fig, ax = plt.subplots(figsize=(8, 5.6))
+    for k in [k for k in MODEL_ORDER if k in curves]:
+        si, sc, summ = curves[k]
+        step = max(1, len(si) // 2000)
+        ax.plot(si[::step], sc[::step], color=MODEL_COLORS[k], linewidth=2.2,
+                label=f"{MODEL_LABELS[k]} (top 20% → {summ['at_fraction']['20']['capture_rate']:.1%})")
+    ax.plot([0, 1], [0, 1], color=GRAY, linestyle="--", linewidth=1.5, label="Random order")
+    for fr in (0.1, 0.2, 0.3):
+        ax.axvline(fr, color=GRID, linewidth=1, zorder=0)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.xaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.set_xlabel("Share of buildings inspected (highest P(grade 3) first)")
+    ax.set_ylabel("Share of grade-3 buildings found")
+    ax.legend(loc="lower right", fontsize=10.5)
+    ax.set_title("Prioritisation on the holdout: three models")
+    return _save(fig, "fig14_capture_comparison")
+
+
+def plot_importance(importances: dict, top=12, order_by="hist_gb", name="fig16_permutation_importance",
+                    figsize=(10, 7.2), fontsize=10.5, title=None, keys=None):
+    """Grouped horizontal bars of permutation importance (drop in micro-F1) of raw columns."""
+    keys = keys or [k for k in MODEL_ORDER if k in importances]
+    ref = {d["feature"]: d["mean"] for d in importances[order_by]}
+    feats = sorted(ref, key=lambda f: -ref[f])[:top][::-1]
+    fig, ax = plt.subplots(figsize=figsize)
+    y = np.arange(len(feats))
+    h = 0.8 / len(keys)
+    for i, k in enumerate(keys):
+        d = {r["feature"]: r for r in importances[k]}
+        vals = [d[f]["mean"] for f in feats]
+        errs = [d[f]["std"] for f in feats]
+        ax.barh(y + (i - (len(keys) - 1) / 2) * h, vals, h * 0.9, xerr=errs, color=MODEL_COLORS[k],
+                label=MODEL_LABELS[k], error_kw={"ecolor": INK2, "elinewidth": 0.8})
+    ax.set_yticks(y, [pretty_feature(f) for f in feats], fontsize=fontsize)
+    ax.axvline(0, color=INK2, linewidth=1)
+    ax.set_xlabel("Drop in micro-F1 when the column is shuffled (holdout subsample)")
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="lower right")
+    ax.set_title(title or f"Permutation importance of the top {top} input columns")
+    return _save(fig, name)

@@ -7,7 +7,8 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (confusion_matrix, f1_score, make_scorer,
                              precision_recall_fscore_support, recall_score, roc_auc_score)
-from sklearn.model_selection import cross_validate
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import GridSearchCV, cross_validate
 
 from .data import CLASSES, RESULTS_PATH, cv_splitter
 from .features import GEO_COLS
@@ -109,6 +110,65 @@ def grade3_coefficients(pipe, X=None) -> pd.DataFrame:
         df.loc[binary, "prevalence"] = Z[:, binary].mean(axis=0)
     df.attrs["source"] = source
     return df.sort_values("coef", ascending=False).reset_index(drop=True)
+
+
+def grid_search(model, param_grid, X, y, n_jobs=1, extra_scoring=None) -> GridSearchCV:
+    """GridSearchCV on the shared 5 folds, scoring every SCORING metric, refit on f1_micro."""
+    scoring = {**SCORING, **(extra_scoring or {})}
+    grid = GridSearchCV(model, param_grid, cv=cv_splitter(), scoring=scoring, refit="f1_micro",
+                        n_jobs=n_jobs, error_score="raise")
+    t0 = time.time()
+    grid.fit(X, y)
+    grid.wall_time_s_ = float(time.time() - t0)
+    return grid
+
+
+def _jsonable(v):
+    if isinstance(v, (np.integer,)):
+        return int(v)
+    if isinstance(v, (np.floating,)):
+        return float(v)
+    return v
+
+
+def grid_summary(grid: GridSearchCV, n_splits: int = 5) -> dict:
+    """Best candidate's fold scores (same format as run_cv) plus one row per candidate."""
+    cvr, b = grid.cv_results_, grid.best_index_
+    best = {}
+    for k in SCORING:
+        folds = [float(cvr[f"split{i}_test_{k}"][b]) for i in range(n_splits)]
+        best[k] = {"mean": float(np.mean(folds)), "std": float(np.std(folds)), "folds": folds}
+    rows = []
+    for i, params in enumerate(cvr["params"]):
+        rows.append({"params": {k.replace("clf__", ""): _jsonable(v) for k, v in params.items()},
+                     "f1_micro_mean": float(cvr["mean_test_f1_micro"][i]),
+                     "f1_micro_std": float(cvr["std_test_f1_micro"][i]),
+                     "f1_macro_mean": float(cvr["mean_test_f1_macro"][i]),
+                     "mean_fit_time_s": float(cvr["mean_fit_time"][i]),
+                     "rank": int(cvr["rank_test_f1_micro"][i])})
+    return {"cv": best, "rows": rows,
+            "best_params": {k.replace("clf__", ""): _jsonable(v) for k, v in grid.best_params_.items()},
+            "grid": {k.replace("clf__", ""): [_jsonable(v) for v in vals]
+                     for k, vals in grid.param_grid.items()},
+            "n_candidates": len(rows), "time_s": getattr(grid, "wall_time_s_", None)}
+
+
+def proba_of_grade3(model, X) -> np.ndarray:
+    proba = model.predict_proba(X)
+    return proba[:, list(model.classes_).index(3)]
+
+
+def raw_permutation_importance(model, X, y, n_rows=10_000, n_repeats=5, random_state=42) -> list:
+    """Permutation importance of the ORIGINAL input columns (the whole pipeline is the
+    estimator, so e.g. geo_level_3_id covers its target-encoded columns), measured as the
+    drop in micro-F1 on a random subsample of the holdout."""
+    Xs = X.sample(n=min(n_rows, len(X)), random_state=random_state)
+    ys = y.loc[Xs.index]
+    r = permutation_importance(model, Xs, ys, scoring="f1_micro", n_repeats=n_repeats,
+                               random_state=random_state, n_jobs=1)
+    out = [{"feature": c, "mean": float(m), "std": float(sd)}
+           for c, m, sd in zip(X.columns, r.importances_mean, r.importances_std)]
+    return sorted(out, key=lambda d: -d["mean"])
 
 
 def save_results(results: dict, path=RESULTS_PATH):

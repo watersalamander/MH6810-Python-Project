@@ -34,7 +34,7 @@ def main():
     args = ap.parse_args()
     t0 = time.time()
     if not args.skip_notebook:
-        print("[1/3] executing notebook (about 25-75 min) ...", flush=True)
+        print("[1/3] executing notebook (about 50-90 min) ...", flush=True)
         execute_notebook(ROOT / "notebooks" / "earthquake_damage.ipynb")
     from . import build_report, build_slides
     print("[2/3] building report ...", flush=True)

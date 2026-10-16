@@ -4,12 +4,14 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.utils.validation import check_is_fitted
 
 from .data import RANDOM_STATE
-from .features import AgeCleaner, FeatureEngineer, build_preprocessor
+from .features import (N_TREE_CATEGORICAL, AgeCleaner, FeatureEngineer, build_preprocessor,
+                       build_tree_preprocessor)
 
 MAX_ITER = 5000
 
@@ -92,8 +94,45 @@ def make_model(cfg: Config) -> Pipeline:
 
 
 def max_n_iter(pipe: Pipeline) -> int:
+    """Largest lbfgs iteration count of a fitted LR pipeline (0 for other models)."""
     clf = pipe.named_steps["clf"]
+    if not isinstance(clf, (LogisticRegression, OrdinalLogisticRegression)):
+        return 0
     return int(np.max(clf.n_iter_)) if hasattr(clf, "n_iter_") else 0
+
+
+# ------------------------------------------------------------------ tree ensembles
+# Fixed (non-tuned) settings. RF memory is bounded by max_samples (each tree sees a
+# bootstrap sample of half the training fold) and by min_samples_leaf (tuned, >= 3), so a
+# fitted forest stays at a few hundred MB on an 8 GB machine.
+RF_FIXED = dict(n_estimators=150, max_samples=0.5, bootstrap=True, criterion="gini")
+HGB_FIXED = dict(loss="log_loss", max_iter=300, early_stopping=False, l2_regularization=0.0)
+
+
+def make_rf(engineered=(), n_jobs=2, **params) -> Pipeline:
+    """Random forest on the tree preprocessor (same information as LR config E4)."""
+    clf = RandomForestClassifier(**{**RF_FIXED, **params}, n_jobs=n_jobs,
+                                 random_state=RANDOM_STATE)
+    return Pipeline([
+        ("age", AgeCleaner()),
+        ("fe", FeatureEngineer(engineered)),
+        ("pre", build_tree_preprocessor(engineered)),
+        ("clf", clf),
+    ])
+
+
+def make_hgb(engineered=(), **params) -> Pipeline:
+    """Histogram gradient boosting; the integer-coded categoricals (first columns of the
+    tree preprocessor) use native categorical splits."""
+    clf = HistGradientBoostingClassifier(**{**HGB_FIXED, **params},
+                                         categorical_features=list(range(N_TREE_CATEGORICAL)),
+                                         random_state=RANDOM_STATE)
+    return Pipeline([
+        ("age", AgeCleaner()),
+        ("fe", FeatureEngineer(engineered)),
+        ("pre", build_tree_preprocessor(engineered)),
+        ("clf", clf),
+    ])
 
 
 E0 = Config("E0", "Majority-class baseline", baseline=True)

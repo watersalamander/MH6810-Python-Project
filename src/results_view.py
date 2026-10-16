@@ -3,7 +3,7 @@
 Every number that appears in the report or slides is formatted from this object, so the
 documents can never drift from the computed results."""
 from .evaluate import load_results
-from .plots import pretty_feature
+from .plots import MODEL_ORDER, pretty_feature
 
 
 def pct(x, d=1):
@@ -36,6 +36,51 @@ class ResultsView:
         self.prio, self.coef, self.sub = r["prioritisation"], r["coefficients"], r["submission"]
         self.abl, self.conv = r["feature_ablation"], r["convergence"]
         self.best = r["best_config"]["name"]
+        self.models, self.final = r["models"], r["final_model"]
+        self.order = [k for k in MODEL_ORDER if k in self.models]
+        self.F = self.final["key"]                      # key of the overall final model
+
+    # --- three-model helpers (keys: logreg, random_forest, hist_gb)
+    def label(self, k):
+        return self.models[k]["label"]
+
+    def mcv(self, k, metric="f1_micro"):
+        return self.models[k]["cv"][metric]["mean"]
+
+    def mcv_sd(self, k, metric="f1_micro"):
+        return self.models[k]["cv"][metric]["std"]
+
+    def mcv_cell(self, k, metric="f1_micro"):
+        return f"{self.mcv(k, metric):.4f} ± {self.mcv_sd(k, metric):.4f}"
+
+    def mho(self, k, metric="f1_micro"):
+        return self.models[k]["holdout"][metric]
+
+    def mrec(self, k, c, holdout=True):
+        if holdout:
+            return self.models[k]["holdout"]["per_class"][str(c)]["recall"]
+        return self.models[k]["cv"][f"recall_{c}"]["mean"]
+
+    def mcap(self, k, frac=20):
+        return self.models[k]["prioritisation"]["at_fraction"][str(frac)]["capture_rate"]
+
+    def mauc(self, k):
+        return self.models[k]["prioritisation"]["auc_grade3_vs_rest"]
+
+    def params_txt(self, k, sep=", "):
+        return sep.join(f"{a} = {v:g}" if isinstance(v, (int, float)) else f"{a} = {v}"
+                        for a, v in self.models[k]["best_params"].items())
+
+    def grid_txt(self, k):
+        return "; ".join(f"{a} ∈ {{{', '.join(f'{v:g}' if isinstance(v, (int, float)) else str(v) for v in vals)}}}"
+                         for a, vals in self.models[k]["grid"].items())
+
+    def fcm(self, i, j, k=None):
+        """Row-normalised holdout confusion-matrix cell of model k (default: final model)."""
+        return self.models[k or self.F]["holdout"]["confusion_matrix_normalised"][i - 1][j - 1]
+
+    def top_importance(self, k, top=5):
+        return self.models[k]["importance"][:top]
 
     # --- experiment helpers
     def mic(self, k):

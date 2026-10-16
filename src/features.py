@@ -3,8 +3,8 @@ import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import (FunctionTransformer, OneHotEncoder, StandardScaler,
-                                   TargetEncoder)
+from sklearn.preprocessing import (FunctionTransformer, OneHotEncoder, OrdinalEncoder,
+                                   StandardScaler, TargetEncoder)
 
 from .data import AGE_PLACEHOLDER, RANDOM_STATE
 
@@ -101,4 +101,31 @@ def build_preprocessor(use_geo1: bool, use_geo23: bool, engineered=()) -> Column
         transformers.append(
             ("geo_te", TargetEncoder(target_type="multiclass", cv=5, shuffle=True,
                                      random_state=RANDOM_STATE), [GEO2, GEO3]))
+    return ColumnTransformer(transformers, remainder="drop", verbose_feature_names_out=False)
+
+
+# ------------------------------------------------------------------ tree models
+TREE_NUMERIC = NUMERIC_LOG + NUMERIC_PLAIN          # trees are invariant to monotone transforms
+TREE_CATEGORICAL = CATEGORICAL + [GEO1]               # integer-coded; native categoricals for HGB
+N_TREE_CATEGORICAL = len(TREE_CATEGORICAL)            # they come first in the output
+
+
+def build_tree_preprocessor(engineered=()) -> ColumnTransformer:
+    """Preprocessor for the tree ensembles, using the same information as the final LR
+    configuration (E4): structure, geo_level_1, cross-fitted multiclass target encoding of
+    geo_level_2/3 and the kept engineered features.
+
+    Differences from the LR preprocessor: no log transform or scaling (splits are invariant
+    to monotone transforms), and the 8 categoricals + geo_level_1 are integer-coded with an
+    OrdinalEncoder instead of one-hot. The integer-coded columns come FIRST so that
+    HistGradientBoosting can treat columns 0..N_TREE_CATEGORICAL-1 as native categoricals.
+    Unseen categories become NaN, which both tree models handle natively."""
+    transformers = [
+        ("cat", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=np.nan),
+         TREE_CATEGORICAL),
+        ("num", "passthrough", TREE_NUMERIC + list(engineered)),
+        ("bin", "passthrough", BINARY),
+        ("geo_te", TargetEncoder(target_type="multiclass", cv=5, shuffle=True,
+                                 random_state=RANDOM_STATE), [GEO2, GEO3]),
+    ]
     return ColumnTransformer(transformers, remainder="drop", verbose_feature_names_out=False)
