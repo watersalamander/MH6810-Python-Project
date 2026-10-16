@@ -20,3 +20,6 @@ Thumbs.db
 
 # DrivenData competition data: not redistributable, download it yourself (see data/README.md)
 data/*.csv
+
+# Claude Code local files (agent worktrees, settings)
+.claude/
