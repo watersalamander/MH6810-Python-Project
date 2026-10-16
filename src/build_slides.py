@@ -30,6 +30,8 @@ WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 HEAD, BODY = "Cambria", "Calibri"
 W, H = 13.333, 7.5
 WPM = 140  # speaking rate used for timing estimates
+TALK_MIN = 20  # length of the presentation slot (minutes)
+N_PRESENTERS = 6
 
 
 class Deck:
@@ -188,7 +190,7 @@ def build(rv: ResultsView):
         "after a major earthquake, can a simple, transparent model tell inspectors which buildings to visit first? "
         f"We worked with records of {n(R.data['n_train_rows'])} buildings surveyed after the 2015 Gorkha earthquake in Nepal, "
         "and we compared three models: a transparent logistic regression, a random forest and gradient boosting. "
-        "Over the next fifteen minutes, six of us will walk you through the data, our preprocessing, the two ideas we are most proud of, "
+        "Over the next twenty minutes, six of us will walk you through the data, our preprocessing, the two ideas we are most proud of, "
         "how we trained and tested the models, what we found, and where we would go next."))
 
     # 2 ---------------------------------------------------------------- Dataset
@@ -223,7 +225,9 @@ def build(rv: ResultsView):
         f"{n(R.data['n_test_rows'])} unlabelled buildings that we only use for a competition submission. "
         f"The features fall into four groups. Location is given as three nested region levels, from {R.data['n_unique']['geo_level_1_id']} broad regions down to {n(R.data['n_unique']['geo_level_3_id'])} local areas. "
         "Then size and age, construction details such as foundation, roof and eleven superstructure-material flags, and finally use and ownership. "
-        "The data are clean, with no missing values, but the categorical codes are anonymised letters, so we can say a foundation of type 'i' is safer, not exactly what 'i' is."))
+        "The data are clean, with no missing values, but the categorical codes are anonymised letters, so we can say a foundation of type 'i' is safer, not exactly what 'i' is. "
+        "Every one of these features was recorded by the survey, so a model built on them could in principle be applied to the next earthquake as soon as the building register exists, "
+        "before a single inspector has visited."))
 
     # 3 ---------------------------------------------------------------- Problem statement
     s = d.new()
@@ -253,9 +257,45 @@ def build(rv: ResultsView):
         "Technically this is a three-class classification problem, and the classes are ordered, grade 1 to grade 3. "
         "We report micro-F1, which is the competition metric and equals accuracy, and macro-F1, which gives the rare low-damage class equal weight. "
         "Because the real goal is prioritisation, we also rank buildings by their predicted probability of grade 3 and measure how many destroyed buildings an inspection list catches. "
-        "Finally, we compare three models: logistic regression, which is transparent and easy to audit, and two tree ensembles, which are more flexible but harder to explain."))
+        "Finally, we compare three models: logistic regression, which is transparent and easy to audit, and two tree ensembles, which are more flexible but harder to explain. "
+        "Keep that trade-off in mind, accuracy against explainability, because it comes back at the end of our talk."))
 
-    # 4 ---------------------------------------------------------------- EDA 1
+    # 4 ---------------------------------------------------------------- EDA 0: class imbalance
+    cs = R.data["class_share"]
+    s = d.new()
+    d.header(s, "Dataset pre-processing · exploration", "The damage grades are imbalanced")
+    d.picture(s, fig("fig01_class_distribution"), 0.5, 1.6, 7.6, 5.2)
+    cards = [
+        (pct(cs["2"], 0), "of buildings are grade 2",
+         f"Grade 3: {pct(cs['3'], 0)} · grade 1: only {pct(cs['1'], 0)} (about 1 in {round(1 / cs['1'])})"),
+        (f"{base:.3f}", "micro-F1 from always guessing grade 2",
+         f"…but macro-F1 only {R.mac('E0'):.3f}: grades 1 and 3 are never found"),
+    ]
+    for i, (big, lab, sub) in enumerate(cards):
+        y = 1.7 + i * 1.72
+        d.box(s, 8.45, y, 4.3, 1.55)
+        d.text(s, 8.7, y + 0.12, 1.75, 0.7, big, size=30, bold=True, color=ORANGE if i == 0 else NAVY, font=HEAD)
+        d.text(s, 10.45, y + 0.17, 2.2, 0.7, lab, size=14, bold=True, color=NAVY)
+        d.text(s, 8.7, y + 0.88, 3.9, 0.6, sub, size=13, color=INK2)
+    d.box(s, 8.45, 5.14, 4.3, 1.7, fill=NAVY)
+    d.text(s, 8.7, 5.24, 3.9, 0.35, "How we handled it", size=15, bold=True, color=WHITE)
+    d.text(s, 8.7, 5.62, 3.9, 1.2, [
+        f"Stratified split and CV folds keep the {' / '.join(f'{100 * cs[c]:.0f}' for c in ('1', '2', '3'))} mix",
+        "Report macro-F1 and per-class recall, not only accuracy",
+        "Tested class weighting (E5) as a fix",
+    ], size=12.5, color=LIGHTBLUE, spacing=3)
+    d.footer(s)
+    d.add_notes(s, "Exploration: class imbalance", (
+        "Before looking at any feature, we looked at the target itself. This chart shows how many buildings fall into each damage grade, measured on our training split. "
+        f"Grade 2 dominates with {pct(cs['2'], 0)} of buildings, grade 3 follows with {pct(cs['3'], 0)}, and grade 1, low damage, is only {pct(cs['1'], 0)}, about one building in {round(1 / cs['1'])}. "
+        "This matters for three reasons. "
+        f"First, it sets the bar: a model that ignores the data and always answers grade 2 is already right {pct(base, 0)} of the time, a micro-F1 of {base:.3f}. Anything we build has to beat that. "
+        "Second, it is why we report two metrics. Micro-F1 counts every building equally, so it is dominated by grade 2; it equals plain accuracy. "
+        f"Macro-F1 averages the F1 score of each grade with equal weight, so the rare grade 1 counts as much as grade 2. The always-grade-2 model gets a macro-F1 of only {R.mac('E0'):.3f}, which exposes it immediately. "
+        f"Third, it shaped our procedure. Every split and every cross-validation fold is stratified, so each one keeps the same {', '.join(f'{100 * cs[c]:.0f}' for c in ('1', '2', '3'))} percent mix, "
+        "and we tested class weighting, which tells the model to pay more attention to rare grades. We will come back to that experiment in the highlights."))
+
+    # 5 ---------------------------------------------------------------- EDA 1
     ss = R.eda["superstructure"]
     mms, rce = ss["has_superstructure_mud_mortar_stone"], ss["has_superstructure_rc_engineered"]
     s = d.new()
@@ -264,7 +304,8 @@ def build(rv: ResultsView):
     cards = [
         (pct(mms["prevalence"], 0), "of buildings use mud-mortar stone", f"{pct(mms['grade3_share'], 0)} of them were destroyed (grade 3)"),
         (pct(rce["grade3_share"], 0), "grade-3 rate for engineered RC", f"{pct(rce['grade1_share'], 0)} of RC buildings had only low damage"),
-        (pct(R.data["class_share"]["1"], 0), "of buildings are grade 1", f"Imbalanced: grade 2 is {pct(R.data['class_share']['2'], 0)} of all buildings"),
+        (pct(R.eda["foundation_type"]["grade3_share"]["i"], 0), "grade-3 rate, foundation type i",
+         f"vs {pct(R.eda['foundation_type']['grade3_share']['r'], 0)} for type r, used by {pct(R.eda['foundation_type']['prevalence']['r'], 0)} of buildings"),
     ]
     for i, (big, lab, sub) in enumerate(cards):
         y = 1.7 + i * 1.72
@@ -278,9 +319,10 @@ def build(rv: ResultsView):
         f"The biggest structural signal is the building material. About {pct(mms['prevalence'], 0)} of buildings are built from mud-mortar stone, "
         f"and {pct(mms['grade3_share'], 0)} of those were essentially destroyed. "
         f"Compare engineered reinforced concrete: only {pct(rce['grade3_share'], 0)} reached grade 3, and {pct(rce['grade1_share'], 0)} had only low damage. "
-        "Foundation and roof types show the same pattern, which you can see in our report. "
-        f"Notice also that the classes are imbalanced: grade 2 is {pct(R.data['class_share']['2'], 0)} of buildings and grade 1 only {pct(R.data['class_share']['1'], 0)}, "
-        f"so always guessing grade 2 already scores {R.mic('E0'):.2f}, and grade 1 will be the hardest class."))
+        f"Foundation and roof types show the same pattern. Foundation type r, used by {pct(R.eda['foundation_type']['prevalence']['r'], 0)} of buildings, has a grade-3 rate of {pct(R.eda['foundation_type']['grade3_share']['r'], 0)}, "
+        f"while foundation type i has only {pct(R.eda['foundation_type']['grade3_share']['i'], 0)}, and roof type x only {pct(R.eda['roof_type']['grade3_share']['x'], 0)}. "
+        "The codes are anonymised, but these protective types behave exactly like engineered, reinforced construction. "
+        "The lesson for modelling: what a building is made of carries real signal, and we should expect the models to pick it up."))
 
     # 5 ---------------------------------------------------------------- EDA 2
     g = R.eda["geo1_grade3_share"]
@@ -298,6 +340,8 @@ def build(rv: ResultsView):
         f"The second key finding is geography. Each bar is one of the {R.data['n_unique']['geo_level_1_id']} top-level regions, sorted by its share of destroyed buildings. "
         f"In region {g['argmin']} only {pct(g['min'], 0)} of buildings reached grade 3; in region {g['argmax']} it was {pct(g['max'], 0)}. "
         "The same mud-stone house fares very differently depending on how strongly the ground shook, and location is our best proxy for that. "
+        f"Remember that location comes at three nested levels: {R.data['n_unique']['geo_level_1_id']} regions, {n(R.data['n_unique']['geo_level_2_id'])} sub-regions and {n(R.data['n_unique']['geo_level_3_id'])} local areas, "
+        "each sitting inside the level above, a bit like province, district and village. This chart only uses the coarsest level. "
         "This told us two things: location must be in the model, and the finer location levels, with thousands of local areas, probably carry even more signal, "
         "if we can encode them without overfitting. That is one of our highlights."))
 
@@ -334,6 +378,7 @@ def build(rv: ResultsView):
     d.footer(s)
     d.add_notes(s, "Cleaning and feature engineering", (
         "Every preprocessing step lives inside a single scikit-learn pipeline, so in cross-validation each step is re-fitted on the training folds only. That is how we avoid data leakage. "
+        "Leakage would happen, for example, if we computed the median age or a village's damage rate on all the data before splitting: the validation buildings would then have helped build their own features, and our scores would look better than they really are. "
         f"The data had no missing values, but {n(R.data['n_age_placeholder'])} buildings have an age of 995 years, which is clearly a placeholder. "
         "Instead of treating them as very old buildings, we add a flag and replace the age with the training median; the flag matters because these buildings are actually damaged less often. "
         "For logistic regression, age, area and height are log-transformed and standardised, and categoricals are one-hot encoded; the tree models skip the scaling and use integer codes instead. "
@@ -369,6 +414,7 @@ def build(rv: ResultsView):
     d.add_notes(s, "Highlight: geo target encoding", (
         f"Our first highlight is how we used location. The finest level has {n(R.data['n_unique']['geo_level_3_id'])} villages. One-hot encoding that would create thousands of sparse columns and overfit. "
         "Instead, we used target encoding: each village is replaced by three numbers, its observed share of grade 1, 2 and 3 buildings, smoothed toward the overall mix when a village is small. "
+        "For example, a village with only three buildings, all destroyed, does not get a grade-3 rate of one hundred percent; its estimate is pulled toward the national average, because three buildings are weak evidence. "
         "The danger with target encoding is leakage, because a building's own label would leak into its feature. "
         "scikit-learn's TargetEncoder cross-fits internally, so a building's encoding is always computed from other buildings, and because it sits in our pipeline it is re-fitted inside every CV fold. "
         f"The effect is the biggest jump in the whole project. Structure alone gives {R.mic('E1'):.3f}; adding the region one-hot gives {R.mic('E2'):.3f}; "
@@ -446,6 +492,8 @@ def build(rv: ResultsView):
         "Now, how we trained and tested. We split the labelled data 80 to 20, stratified by damage grade, "
         f"and locked the {n(R.split['n_holdout'])}-building holdout away until the very end. "
         "All comparisons and tuning used stratified five-fold cross-validation on the 80 percent, with every encoder re-fitted inside each fold. "
+        "Five-fold means we train five times, each time holding out a different fifth of the training data, and average the five scores. "
+        "That gives us both a mean and a spread, so we can tell a real improvement from noise, and it means we never need to look at the holdout while making decisions. "
         f"For logistic regression we ran seven experiments and tuned C on the best one, {R.best}. "
         "The random forest and gradient boosting reuse the same features and folds, with small tuning grids. "
         f"Each tuned model was scored once on the holdout, but the final model was chosen by cross-validation alone: {FL}. "
@@ -470,7 +518,8 @@ def build(rv: ResultsView):
         f"The majority baseline scores {base:.3f}. Structure alone lifts this to {R.mic('E1'):.3f}, which is useful but modest. "
         f"Adding the {R.data['n_unique']['geo_level_1_id']} regions gains {pp(geo1_gain)}, and the target-encoded village levels add another {pp(e3_gain)}, the largest single step. "
         f"Engineered features change micro-F1 by only {pp(fe_gain, 2)}. "
-        f"The balanced and ordinal variants score {R.mic('E5'):.3f} and {R.mic('E6'):.3f}. "
+        f"The balanced and ordinal variants score {R.mic('E5'):.3f} and {R.mic('E6'):.3f}, which is why we carried E4 forward. "
+        f"Tuning the regularisation strength C barely mattered: the best value, {R.best_C:g}, is within a hair of the default, because with {n(R.split['n_train'])} training buildings the model is not starved of data. "
         f"The fold-to-fold standard deviations are tiny, at most {100 * max(R.mic_sd(k) for k in R.exp):.2f} percentage points, so the big steps are not noise. "
         "The lesson: building material matters, but only location tells a mud-stone house near the epicentre from one far away, and once location is in, hand-made features add almost nothing."))
 
@@ -496,6 +545,9 @@ def build(rv: ResultsView):
     d.footer(s)
     d.add_notes(s, "Three-model comparison", (
         "Now the comparison our course asked for: three models on exactly the same features and folds. "
+        "A quick word on the two new models. A random forest grows many decision trees, each on a random sample of buildings and features, and lets them vote; averaging makes it stable. "
+        "Gradient boosting instead grows trees one after another, each new tree correcting the mistakes of the trees before it. "
+        "Both can learn interactions and thresholds automatically, which logistic regression cannot do unless we hand-craft them. "
         f"Logistic regression reaches {R.mcv(LR):.3f} cross-validated micro-F1 and {R.mho(LR):.3f} on the holdout. "
         f"The random forest reaches {R.mcv(RF):.3f} and {R.mho(RF):.3f}, and HistGradientBoosting {R.mcv(HGB):.3f} and {R.mho(HGB):.3f}. "
         + (f"So {FL} is our final model, chosen on cross-validation only. Its gain over logistic regression is {pp(gain_cv, 2)} in cross-validation and {pp(gain_ho, 2)} on the holdout: "
@@ -532,7 +584,8 @@ def build(rv: ResultsView):
         f"close to its cross-validated {R.mcv(F):.3f}, so our model selection did not overfit. "
         f"Grade 2 is recalled {pct(R.mrec(F, 2), 0)} of the time and grade 3 {pct(R.mrec(F, 3), 0)}; grade 1 is hardest at {pct(R.mrec(F, 1), 0)}, because it is rare and often looks like grade 2. "
         "The grey numbers are logistic regression, for comparison. "
-        f"Importantly, mistakes are almost always between neighbouring grades: only {pct(R.fcm(3, 1), 1)} of destroyed buildings are mistaken for low damage, which is the costly error for inspectors."))
+        f"Importantly, mistakes are almost always between neighbouring grades: only {pct(R.fcm(3, 1), 1)} of destroyed buildings are mistaken for low damage, which is the costly error for inspectors. "
+        f"The biggest remaining error is grade-3 buildings predicted as grade 2, {pct(R.fcm(3, 2), 0)} of them: many destroyed buildings look ordinary on paper, and what tipped them over, such as local shaking, is not in the data."))
 
     # 13 --------------------------------------------------------------- Prioritisation
     s = d.new()
@@ -556,7 +609,9 @@ def build(rv: ResultsView):
         f"against 10, 20 and 30 percent for a random order. "
         f"The three curves almost overlap: at 20 percent, logistic regression finds {pct(R.mcap(LR), 1)}, the forest {pct(R.mcap(RF), 1)} and boosting {pct(R.mcap(HGB), 1)}. "
         f"Concretely, in our holdout the first {n(fa['at_fraction']['10']['n_inspected'])} visits would reach about {n(round(R.mcap(F, 10) * fa['n_grade3']))} destroyed buildings, "
-        f"instead of about {n(round(0.10 * fa['n_grade3']))} in random order."))
+        f"instead of about {n(round(0.10 * fa['n_grade3']))} in random order. "
+        "The curve also shows diminishing returns: the first part of the list is rich in destroyed buildings, and after about half the list most remaining buildings are lower risk, "
+        "which helps an agency decide how many teams it needs in the first days."))
 
     # 14 --------------------------------------------------------------- Interpretation
     up = R.top_features("raising", 3)
@@ -650,24 +705,51 @@ def build(rv: ResultsView):
     return d
 
 
-SEGMENTS = [  # (presenter, slide numbers) - balanced by estimated speaking time
-    ("Presenter 1", [1, 2, 3]),
-    ("Presenter 2", [4, 5, 6]),
-    ("Presenter 3", [7, 8]),
-    ("Presenter 4", [9, 10, 11]),
-    ("Presenter 5", [12, 13, 14]),
-    ("Presenter 6", [15, 16]),
-]
+def balanced_segments(words, k=N_PRESENTERS):
+    """Split slides 1..n into k contiguous segments with speaking times as equal as possible
+    (minimises the longest segment, ties broken by the smallest spread)."""
+    nsl = len(words)
+    pref = [0]
+    for w in words:
+        pref.append(pref[-1] + w)
+    best = {}
+
+    def solve(i, parts):
+        # returns (max_segment, -min_segment, cuts) for slides i..n-1 split into `parts`
+        if (i, parts) in best:
+            return best[(i, parts)]
+        if parts == 1:
+            seg = pref[nsl] - pref[i]
+            res = (seg, -seg, [nsl])
+        else:
+            res = None
+            for j in range(i + 1, nsl - parts + 2):
+                seg = pref[j] - pref[i]
+                mx, negmn, cuts = solve(j, parts - 1)
+                cand = (max(seg, mx), max(-seg, negmn), [j] + cuts)
+                if res is None or cand[:2] < res[:2]:
+                    res = cand
+        best[(i, parts)] = res
+        return res
+
+    cuts = solve(0, k)[2]
+    segs, start = [], 0
+    for c in cuts:
+        segs.append(list(range(start + 1, c + 1)))
+        start = c
+    return [(f"Presenter {i}", sl) for i, sl in enumerate(segs, 1)]
 
 
 def write_notes_md(d: Deck):
     by_no = {no: (t, txt) for no, t, txt in d.notes}
+    SEGMENTS = balanced_segments([len(by_no[k][1].split()) for k in sorted(by_no)])
 
     def secs(txt):
         return len(txt.split()) / WPM * 60
 
-    lines = ["# Speaker notes: 15-minute talk, 6 presenters", "",
-             f"Timing is estimated from word count at {WPM} words per minute. Each segment is about 2.5 minutes. "
+    lines = [f"# Speaker notes: {TALK_MIN}-minute talk, {N_PRESENTERS} presenters", "",
+             f"Timing is estimated from word count at {WPM} words per minute. Each segment is about "
+             f"{TALK_MIN / N_PRESENTERS:.1f} minutes; segments are contiguous slides balanced automatically by speaking time. "
              "The same script is in the notes pane of every slide in `presentation.pptx`. "
              "Replace *Presenter N* with names.", "",
              "| Segment | Presenter | Slides | Words | Est. time |", "|---|---|---|---|---|"]
