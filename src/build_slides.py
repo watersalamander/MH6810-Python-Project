@@ -142,6 +142,28 @@ class Deck:
         self.text(s, x, y, w, 0.75, big, size=big_size, bold=True, color=color, font=HEAD)
         self.text(s, x, y + 0.8, w, 0.7, label, size=label_size, color=label_color)
 
+    def table(self, s, x, y, widths, rows, header=None, row_h=0.42, size=13, highlight=(),
+              hl_fill=None, align=None, first_bold=False):
+        """Simple grid drawn with rectangles: optional navy header row, tinted body rows.
+        `highlight` holds body-row indices drawn in `hl_fill` (default light orange)."""
+        hl_fill = hl_fill or RGBColor(0xFD, 0xEB, 0xE2)
+        align = align or [PP_ALIGN.LEFT] * len(widths)
+        yy = y
+        all_rows = ([("H", header)] if header else []) + [("B", r) for r in rows]
+        for bi, (kind, row) in enumerate(all_rows):
+            body_i = bi - (1 if header else 0)
+            fill = NAVY if kind == "H" else (hl_fill if body_i in highlight else (TINT if body_i % 2 == 0 else WHITE))
+            xx = x
+            for ci, (w, val) in enumerate(zip(widths, row)):
+                self.box(s, xx, yy, w, row_h, fill=fill, shape=MSO_SHAPE.RECTANGLE, line=LINE)
+                self.text(s, xx + 0.1, yy, w - 0.2, row_h, str(val), size=size,
+                          color=WHITE if kind == "H" else INK,
+                          bold=(kind == "H") or (first_bold and ci == 0),
+                          align=align[ci], anchor=MSO_ANCHOR.MIDDLE)
+                xx += w
+            yy += row_h
+        return yy
+
     def add_notes(self, s, title, notes):
         s.notes_slide.notes_text_frame.text = notes
         self.notes.append((self.count, title, notes))
@@ -225,9 +247,7 @@ def build(rv: ResultsView):
         f"{n(R.data['n_test_rows'])} unlabelled buildings that we only use for a competition submission. "
         f"The features fall into four groups. Location is given as three nested region levels, from {R.data['n_unique']['geo_level_1_id']} broad regions down to {n(R.data['n_unique']['geo_level_3_id'])} local areas. "
         "Then size and age, construction details such as foundation, roof and eleven superstructure-material flags, and finally use and ownership. "
-        "The data are clean, with no missing values, but the categorical codes are anonymised letters, so we can say a foundation of type 'i' is safer, not exactly what 'i' is. "
-        "Every one of these features was recorded by the survey, so a model built on them could in principle be applied to the next earthquake as soon as the building register exists, "
-        "before a single inspector has visited."))
+        "The data are clean, with no missing values, but the categorical codes are anonymised letters, so we can say a foundation of type 'i' is safer, not exactly what 'i' is."))
 
     # 3 ---------------------------------------------------------------- Problem statement
     s = d.new()
@@ -254,11 +274,9 @@ def build(rv: ResultsView):
         "Here is our problem statement. After an earthquake, inspection teams are scarce and there are hundreds of thousands of buildings. "
         "If a model can estimate how badly each building was damaged from information that is already on record, its structure and its location, "
         "teams can visit the most dangerous buildings first. "
-        "Technically this is a three-class classification problem, and the classes are ordered, grade 1 to grade 3. "
-        "We report micro-F1, which is the competition metric and equals accuracy, and macro-F1, which gives the rare low-damage class equal weight. "
+        "Technically this is a three-class classification problem with ordered classes, grade 1 to grade 3. "
         "Because the real goal is prioritisation, we also rank buildings by their predicted probability of grade 3 and measure how many destroyed buildings an inspection list catches. "
-        "Finally, we compare three models: logistic regression, which is transparent and easy to audit, and two tree ensembles, which are more flexible but harder to explain. "
-        "Keep that trade-off in mind, accuracy against explainability, because it comes back at the end of our talk."))
+        "Finally, we compare three models: logistic regression, which is transparent and easy to audit, and two tree ensembles, which are more flexible but harder to explain."))
 
     # 4 ---------------------------------------------------------------- EDA 0: class imbalance
     cs = R.data["class_share"]
@@ -286,14 +304,14 @@ def build(rv: ResultsView):
     ], size=12.5, color=LIGHTBLUE, spacing=3)
     d.footer(s)
     d.add_notes(s, "Exploration: class imbalance", (
-        "Before looking at any feature, we looked at the target itself. This chart shows how many buildings fall into each damage grade, measured on our training split. "
+        "This chart shows how many buildings fall into each damage grade, measured on our training split. "
         f"Grade 2 dominates with {pct(cs['2'], 0)} of buildings, grade 3 follows with {pct(cs['3'], 0)}, and grade 1, low damage, is only {pct(cs['1'], 0)}, about one building in {round(1 / cs['1'])}. "
         "This matters for three reasons. "
-        f"First, it sets the bar: a model that ignores the data and always answers grade 2 is already right {pct(base, 0)} of the time, a micro-F1 of {base:.3f}. Anything we build has to beat that. "
+        f"First, it sets the bar: a model that ignores the data and always answers grade 2 is already right {pct(base, 0)} of the time, a micro-F1 of {base:.3f}. "
         "Second, it is why we report two metrics. Micro-F1 counts every building equally, so it is dominated by grade 2; it equals plain accuracy. "
         f"Macro-F1 averages the F1 score of each grade with equal weight, so the rare grade 1 counts as much as grade 2. The always-grade-2 model gets a macro-F1 of only {R.mac('E0'):.3f}, which exposes it immediately. "
         f"Third, it shaped our procedure. Every split and every cross-validation fold is stratified, so each one keeps the same {', '.join(f'{100 * cs[c]:.0f}' for c in ('1', '2', '3'))} percent mix, "
-        "and we tested class weighting, which tells the model to pay more attention to rare grades. We will come back to that experiment in the highlights."))
+        "and we tested class weighting, which we come back to in the highlights."))
 
     # 5 ---------------------------------------------------------------- EDA 1
     ss = R.eda["superstructure"]
@@ -321,8 +339,7 @@ def build(rv: ResultsView):
         f"Compare engineered reinforced concrete: only {pct(rce['grade3_share'], 0)} reached grade 3, and {pct(rce['grade1_share'], 0)} had only low damage. "
         f"Foundation and roof types show the same pattern. Foundation type r, used by {pct(R.eda['foundation_type']['prevalence']['r'], 0)} of buildings, has a grade-3 rate of {pct(R.eda['foundation_type']['grade3_share']['r'], 0)}, "
         f"while foundation type i has only {pct(R.eda['foundation_type']['grade3_share']['i'], 0)}, and roof type x only {pct(R.eda['roof_type']['grade3_share']['x'], 0)}. "
-        "The codes are anonymised, but these protective types behave exactly like engineered, reinforced construction. "
-        "The lesson for modelling: what a building is made of carries real signal, and we should expect the models to pick it up."))
+        "The codes are anonymised, but these protective types behave exactly like engineered, reinforced construction."))
 
     # 5 ---------------------------------------------------------------- EDA 2
     g = R.eda["geo1_grade3_share"]
@@ -339,18 +356,18 @@ def build(rv: ResultsView):
     d.add_notes(s, "Exploration: location", (
         f"The second key finding is geography. Each bar is one of the {R.data['n_unique']['geo_level_1_id']} top-level regions, sorted by its share of destroyed buildings. "
         f"In region {g['argmin']} only {pct(g['min'], 0)} of buildings reached grade 3; in region {g['argmax']} it was {pct(g['max'], 0)}. "
-        "The same mud-stone house fares very differently depending on how strongly the ground shook, and location is our best proxy for that. "
+        "Location is our best proxy for how strongly the ground shook. "
         f"Remember that location comes at three nested levels: {R.data['n_unique']['geo_level_1_id']} regions, {n(R.data['n_unique']['geo_level_2_id'])} sub-regions and {n(R.data['n_unique']['geo_level_3_id'])} local areas, "
         "each sitting inside the level above, a bit like province, district and village. This chart only uses the coarsest level. "
         "This told us two things: location must be in the model, and the finer location levels, with thousands of local areas, probably carry even more signal, "
         "if we can encode them without overfitting. That is one of our highlights."))
 
-    # 6 ---------------------------------------------------------------- Cleaning & FE
+    # 6a --------------------------------------------------------------- Pipeline overview
     s = d.new()
-    d.header(s, "Dataset pre-processing · cleaning & feature engineering", "Every step lives inside one leakage-safe sklearn Pipeline")
-    steps = [("Age clean", "995 → flag +\ntraining median"), ("Engineer", f"kept: {kept_txt}"),
-             ("Scale (LR)", "log1p + standardise\nage, area, height"), ("Encode", "8 categoricals + region:\nLR one-hot, trees codes"),
-             ("Target-encode", "geo levels 2 & 3\n(multiclass, cross-fit)"), ("3 models", "LR · random forest\n· gradient boosting")]
+    d.header(s, "Dataset pre-processing · overview", "Six steps, all inside one leakage-safe pipeline")
+    steps = [("1 Age clean", "995 → flag +\ntraining median"), ("2 Engineer", f"kept: {kept_txt}"),
+             ("3 Scale (LR)", "log1p + standardise\nage, area, height"), ("4 Encode", "8 categoricals + region:\nLR one-hot, trees codes"),
+             ("5 Target-encode", "geo levels 2 & 3\n(multiclass, cross-fit)"), ("6 Three models", "LR · random forest\n· gradient boosting")]
     bw, gap = 1.85, 0.21
     for i, (t, body) in enumerate(steps):
         x = 0.6 + i * (bw + gap)
@@ -360,35 +377,201 @@ def build(rv: ResultsView):
         d.text(s, x + 0.15, 2.65, bw - 0.3, 0.95, body, size=12.5, color=LIGHTBLUE if last else INK2)
         if not last:
             d.arrow(s, x + bw + 0.02, 2.7, x + bw + gap - 0.02, 2.7)
-    d.text(s, 0.6, 3.95, 6, 0.4, "Cleaning", size=18, bold=True, color=NAVY)
-    d.text(s, 0.6, 4.4, 5.8, 2.4, [
-        f"No missing values, but {n(R.data['n_age_placeholder'])} buildings have age = 995, a placeholder (the next real age is {R.data['age_max_real']}).",
-        f"These have a lower grade-3 rate ({pct(R.eda['age_placeholder_grade3_share'], 0)} vs {pct(R.eda['age_real_grade3_share'], 0)}), so we keep an indicator flag and impute the training-fold median.",
-        f"Skewed numerics: area skew {R.eda['skewness']['area_percentage']:.1f} → {R.eda['skewness_after_log1p']['area_percentage']:.1f} after log1p.",
+    d.box(s, 0.6, 4.0, 6.0, 2.75)
+    d.text(s, 0.85, 4.15, 5.5, 0.4, "Why one pipeline?", size=18, bold=True, color=NAVY)
+    d.text(s, 0.85, 4.6, 5.5, 2.1, [
+        "Steps 1, 3, 4 and 5 learn something from the data: a median age, a mean and spread, a list of categories, area damage rates.",
+        "Inside cross-validation the whole pipeline is re-fitted on the training folds only, so validation buildings never help build their own features.",
     ], size=14, color=INK2, spacing=8)
-    d.text(s, 7.0, 3.95, 6, 0.4, "Feature engineering (paired add-one test)", size=18, bold=True, color=NAVY)
-    rows = sorted(R.abl["candidates"].items(), key=lambda kv: -kv[1]["mean_gain"])
-    for i, (f, a) in enumerate(rows):
-        y = 4.45 + i * 0.55
-        d.box(s, 7.0, y, 5.75, 0.46, fill=TINT if not a["kept"] else RGBColor(0xFD, 0xEB, 0xE2))
-        d.text(s, 7.2, y + 0.08, 3.0, 0.3, f, size=13, color=INK, bold=a["kept"])
-        d.text(s, 10.0, y + 0.08, 1.3, 0.3, pp(a["mean_gain"], 2), size=13, color=INK2)
-        d.text(s, 11.25, y + 0.08, 1.4, 0.3, ("kept" if a["kept"] else "dropped") + f" ({a['folds_improved']}/5)",
-               size=13, color=ORANGE if a["kept"] else MUTED, bold=a["kept"])
+    d.box(s, 6.85, 4.0, 5.9, 2.75)
+    d.text(s, 7.1, 4.15, 5.4, 0.4, "Two versions of the pipeline", size=18, bold=True, color=NAVY)
+    d.table(s, 7.1, 4.65, [1.9, 1.75, 1.75], [
+        ["Scaling", "yes", "no"],
+        ["Categoricals", "one-hot", "integer codes"],
+        ["Geo levels 2 & 3", "target-encoded", "target-encoded"],
+    ], header=["Step", "Logistic reg.", "Trees"], row_h=0.44, size=12.5, first_bold=True)
     d.footer(s)
-    d.add_notes(s, "Cleaning and feature engineering", (
-        "Every preprocessing step lives inside a single scikit-learn pipeline, so in cross-validation each step is re-fitted on the training folds only. That is how we avoid data leakage. "
-        "Leakage would happen, for example, if we computed the median age or a village's damage rate on all the data before splitting: the validation buildings would then have helped build their own features, and our scores would look better than they really are. "
-        f"The data had no missing values, but {n(R.data['n_age_placeholder'])} buildings have an age of 995 years, which is clearly a placeholder. "
-        "Instead of treating them as very old buildings, we add a flag and replace the age with the training median; the flag matters because these buildings are actually damaged less often. "
-        "For logistic regression, age, area and height are log-transformed and standardised, and categoricals are one-hot encoded; the tree models skip the scaling and use integer codes instead. "
-        "The two fine location levels are target-encoded for all three models, which we'll explain next. "
-        f"For feature engineering we tested four candidates, each added on its own and compared fold by fold. We kept only features that improved the mean and won in at least four of five folds: {kept_txt}. "
-        f"Overall, engineered features changed micro-F1 by {pp(fe_gain, 2)}, which is small. Most of the signal is already in the raw features."))
+    d.add_notes(s, "Pre-processing overview", (
+        "Before the models see any data, every building goes through the six steps across the top of this slide; the next slides take them one at a time. "
+        "The important design choice is that all six steps live inside a single scikit-learn pipeline. "
+        "Several steps learn something from the data, for example the median age, the mean and spread used for scaling, or each area's damage rate. "
+        "If we learned those on all the data before splitting, the validation buildings would have helped build their own features and our scores would look better than they really are. "
+        "That is called data leakage. Because everything is in one pipeline, cross-validation re-fits every step on the training folds only. "
+        "On the right: the trees need no scaling and use simple integer codes, but all three models get the same information."))
+
+    # 6b --------------------------------------------------------------- Cleaning: age placeholder
+    s = d.new()
+    d.header(s, "Dataset pre-processing · cleaning", f"Age = 995 is a placeholder, not a real age")
+    d.text(s, 0.6, 1.6, 12, 0.4, "Distinct values of the age column", size=15, bold=True, color=NAVY)
+    d.box(s, 0.6, 2.1, 6.4, 1.0, fill=BLUE)
+    d.text(s, 0.6, 2.1, 6.4, 1.0, f"real ages: 0 – {R.data['age_max_real']} years", size=20, bold=True, color=WHITE,
+           align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    d.arrow(s, 7.1, 2.6, 9.6, 2.6, color=MUTED)
+    d.text(s, 7.1, 2.05, 2.5, 0.4, "no values in between", size=13, color=MUTED, align=PP_ALIGN.CENTER, italic=True)
+    d.box(s, 9.7, 2.1, 3.05, 1.0, fill=ORANGE)
+    d.text(s, 9.7, 2.1, 3.05, 1.0, "995", size=28, bold=True, color=WHITE, font=HEAD,
+           align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    cards = [
+        (n(R.data["n_age_placeholder"]), f"buildings have age 995 ({pct(R.data['share_age_placeholder'], 2)} of all)"),
+        (f"{R.data['age_max_real']}", "years: the oldest real age, far below 995"),
+        (f"{pct(R.eda['age_placeholder_grade3_share'], 0)} vs {pct(R.eda['age_real_grade3_share'], 0)}",
+         "grade-3 rate: placeholder buildings vs the rest, so the 995 carries information"),
+    ]
+    for i, (big, lab) in enumerate(cards):
+        x = 0.6 + i * 4.12
+        d.box(s, x, 3.45, 3.9, 1.6)
+        d.text(s, x + 0.25, 3.55, 3.5, 0.65, big, size=28, bold=True, color=ORANGE if i == 0 else NAVY, font=HEAD)
+        d.text(s, x + 0.25, 4.25, 3.45, 0.75, lab, size=13.5, color=INK2)
+    d.box(s, 0.6, 5.3, 12.15, 1.5, fill=NAVY)
+    d.text(s, 0.85, 5.42, 11.7, 0.35, "What we do (AgeCleaner, inside the pipeline)", size=16, bold=True, color=WHITE)
+    d.text(s, 0.85, 5.85, 11.7, 0.9, [
+        [("1. ", {"bold": True, "color": ORANGE}), ("Add a yes/no column ", {}), ("age_is_placeholder", {"bold": True, "color": WHITE}),
+         (", so the model can still use the fact that the age was unknown.", {})],
+        [("2. ", {"bold": True, "color": ORANGE}), ("Replace 995 with the ", {}), ("median age of the training data", {"bold": True, "color": WHITE}),
+         (", so it no longer looks like a 995-year-old building.", {})],
+    ], size=14, color=LIGHTBLUE, spacing=4)
+    d.footer(s)
+    d.add_notes(s, "Cleaning: the age placeholder", (
+        f"The data had no missing values at all, but one column hides a problem. When we listed the distinct values of age, they run from 0 up to {R.data['age_max_real']} years "
+        f"and then jump straight to 995, with nothing in between. A building 995 years old is not plausible here; 995 is a code for 'age unknown'. "
+        f"It appears on {n(R.data['n_age_placeholder'])} buildings, about half a percent. "
+        "We could simply delete those rows, but the placeholder actually carries information: "
+        f"these buildings were destroyed less often, {pct(R.eda['age_placeholder_grade3_share'], 0)} against {pct(R.eda['age_real_grade3_share'], 0)} for the rest. "
+        "So we do two things. We add a yes-or-no column that remembers the age was unknown, and we replace 995 with the median age of the training data. "
+        "Because this happens inside the pipeline, the median is recomputed from the training folds every time."))
+
+    # 6c --------------------------------------------------------------- Scaling and encoding
+    sk, skl = R.eda["skewness"], R.eda["skewness_after_log1p"]
+    s = d.new()
+    d.header(s, "Dataset pre-processing · scaling & encoding", "Making every feature readable for the models")
+    d.text(s, 0.6, 1.6, 6.0, 0.4, "Scaling skewed numbers (logistic regression)", size=17, bold=True, color=NAVY)
+    d.text(s, 0.6, 2.05, 6.0, 0.75, [
+        [("log1p(x) = log(1 + x)", {"bold": True, "color": NAVY}), (" squeezes the long tail of a few very old or very large buildings; the +1 handles age 0.", {})],
+        [("Standardise", {"bold": True, "color": NAVY}), (" to mean 0, spread 1, so no feature dominates just because of its units.", {})],
+    ], size=13.5, color=INK2, spacing=5)
+    d.table(s, 0.6, 3.4, [2.6, 1.7, 1.7], [
+        [lab, f"{sk[c]:.1f}", f"{skl[c]:.1f}"] for c, lab in
+        [("age", "age"), ("area_percentage", "footprint area"), ("height_percentage", "height")]
+    ], header=["Skewness", "before", "after log1p"], row_h=0.5, size=14, first_bold=True,
+        align=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.CENTER])
+    d.text(s, 0.6, 5.5, 6.0, 0.9, "0 = symmetric. Trees split on thresholds, so they skip this step: scaling does not change their splits.",
+           size=12.5, color=MUTED)
+    d.text(s, 7.0, 1.6, 5.8, 0.4, "Encoding letter categories", size=17, bold=True, color=NAVY)
+    d.text(s, 7.0, 2.05, 5.75, 0.75, "8 columns such as foundation_type hold anonymised letters. Models need numbers, so each letter is converted:",
+           size=13.5, color=INK2)
+    d.table(s, 7.0, 3.0, [1.55, 0.95, 0.95, 0.95, 1.35], [
+        ["r", "1", "0", "0", "0"],
+        ["i", "0", "1", "0", "1"],
+        ["u", "0", "0", "1", "2"],
+    ], header=["foundation", "is_r", "is_i", "is_u", "tree code"], row_h=0.5, size=14, first_bold=True,
+        align=[PP_ALIGN.LEFT] + [PP_ALIGN.CENTER] * 4)
+    d.text(s, 7.0, 5.1, 5.75, 1.3, [
+        [("One-hot (LR): ", {"bold": True, "color": NAVY}), ("one 0/1 column per letter, so no letter is 'bigger' than another.", {})],
+        [("Integer codes (trees): ", {"bold": True, "color": NAVY}), (f"one column; trees split it into groups. The {R.data['n_unique']['geo_level_1_id']} regions are encoded the same way.", {})],
+    ], size=13, color=INK2, spacing=5)
+    d.text(s, 7.0, 6.55, 5.75, 0.3, "Illustrative rows; three of the five foundation letters shown.", size=11, color=MUTED)
+    d.footer(s)
+    d.add_notes(s, "Scaling and encoding", (
+        "Next, we make every column readable for the models. On the left are the numeric columns. "
+        f"Age, footprint area and height are strongly skewed: most buildings are small and young, but a few are very large or very old. Area, for example, has a skewness of {sk['area_percentage']:.1f}. "
+        f"Taking log of one plus x squeezes that long tail and brings area down to {skl['area_percentage']:.1f}, close to symmetric. "
+        "We then standardise each column to a mean of zero and a spread of one, so that logistic regression treats all features on the same scale. "
+        "Trees skip this step: they only ask 'is the value above some threshold', which scaling does not change. "
+        "On the right are the eight letter-coded columns, such as foundation type. A model cannot read letters, so for logistic regression each letter becomes its own yes-or-no column; this is one-hot encoding, and it avoids pretending that one letter is bigger than another. "
+        "In the table, a building with foundation r gets a one in the is-r column and zeros elsewhere, while the trees simply see the code zero. "
+        f"The trees get a single column of integer codes and learn which codes to group together. The {R.data['n_unique']['geo_level_1_id']} top-level regions are handled the same way. "
+        "The two fine location levels are too large for this, and they get special treatment, which is our first highlight."))
+
+    # 6d --------------------------------------------------------------- Feature engineering
+    s = d.new()
+    d.header(s, "Dataset pre-processing · feature engineering", "Four new features tested, one kept")
+    idea = {"floors_x_log_age": "tall and old buildings", "log_area_height_ratio": "squat vs slender shape",
+            "height_per_floor": "average storey height", "n_superstructure": "number of materials used"}
+    rows = sorted(R.abl["candidates"].items(), key=lambda kv: -kv[1]["mean_gain"])
+    d.table(s, 0.6, 1.75, [3.0, 3.1, 1.75, 1.65, 1.6], [
+        [f, idea.get(f, ""), pp(a["mean_gain"], 3), f"{a['folds_improved']} of 5", "kept" if a["kept"] else "dropped"]
+        for f, a in rows
+    ], header=["Candidate", "Idea", "Mean gain", "Folds won", "Decision"], row_h=0.55, size=14,
+        highlight=tuple(i for i, (_, a) in enumerate(rows) if a["kept"]),
+        align=[PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.CENTER, PP_ALIGN.CENTER])
+    d.box(s, 0.6, 4.75, 6.0, 2.0)
+    d.text(s, 0.85, 4.9, 5.5, 0.4, "The test: paired add-one", size=17, bold=True, color=NAVY)
+    d.text(s, 0.85, 5.35, 5.5, 1.4, [
+        "Add one candidate at a time to the best LR setup (E3) and score it on the same 5 folds.",
+        "Keep it only if the average improves AND it wins in at least 4 of 5 folds, so luck cannot sneak a feature in.",
+    ], size=13.5, color=INK2, spacing=6)
+    d.box(s, 6.85, 4.75, 5.9, 2.0, fill=NAVY)
+    d.text(s, 7.1, 4.9, 5.4, 0.4, "Takeaway", size=17, bold=True, color=WHITE)
+    d.text(s, 7.1, 5.35, 5.4, 1.4, [
+        f"Even the kept feature adds only {pp(fe_gain, 2)} of micro-F1.",
+        "The raw survey columns already hold almost all the signal; better information (location) matters far more than clever transformations.",
+    ], size=13.5, color=LIGHTBLUE, spacing=6)
+    d.footer(s)
+    d.add_notes(s, "Feature engineering", (
+        "We also tried to create new features from existing columns. The table shows the four candidates and the idea behind each: "
+        "floors times log of age for buildings that are both tall and old, the ratio of footprint to height for squat versus slender shapes, the average storey height, and the number of materials a building uses. "
+        "To test them fairly, we added each candidate on its own to our best logistic-regression setup and scored it on exactly the same five folds. "
+        "Because the folds are identical, we can compare fold by fold, and we only kept a feature if it improved the average and won in at least four of the five folds. "
+        f"Only {kept_txt} passed, winning all five folds, but its gain is just {pp(fe_gain, 2)}. "
+        f"The other three moved the average by at most {max(abs(a['mean_gain']) for f, a in R.abl['candidates'].items() if not a['kept']) * 100:.3f} points and won at most "
+        f"{max(a['folds_improved'] for a in R.abl['candidates'].values() if not a['kept'])} of five folds, so they were dropped as noise. "
+        "This is also why the fold rule matters: judged on the average alone, two of the dropped features would have looked like tiny improvements. "
+        "The honest conclusion is that the raw survey columns already contain almost all the signal. As you will see, adding better information, namely location, matters far more than clever transformations."))
+
+    # 7a --------------------------------------------------------------- Highlight: target encoding explained
+    cmix = R.data["class_share"]
+    mix_txt = " / ".join(f"{100 * cmix[c]:.0f}%" for c in ("1", "2", "3"))
+    s = d.new()
+    d.header(s, "Highlights · geo target encoding", "Replace each area's ID with its damage history")
+    d.text(s, 0.6, 1.55, 12, 0.4, "Problem: an area ID (e.g. 4523) is a name, not a quantity, and one-hot would need "
+           f"{n(R.data['n_unique']['geo_level_2_id'] + R.data['n_unique']['geo_level_3_id'])} columns.", size=14, color=INK2)
+    d.text(s, 0.6, 2.05, 6.3, 0.35, "Step 1: count damage grades per area (training data)", size=15, bold=True, color=NAVY)
+    d.table(s, 0.6, 2.45, [1.3, 1.25, 1.25, 1.25, 1.25], [
+        ["Area A", "200", "30", "120", "50"],
+        ["Area B", "150", "3", "42", "105"],
+    ], header=["Area", "Buildings", "Grade 1", "Grade 2", "Grade 3"], row_h=0.45, size=13.5, first_bold=True,
+        align=[PP_ALIGN.LEFT] + [PP_ALIGN.CENTER] * 4)
+    d.text(s, 7.0, 2.05, 5.8, 0.35, "Step 2: each building gets its area's rates", size=15, bold=True, color=NAVY)
+    d.table(s, 7.0, 2.45, [1.85, 1.3, 1.3, 1.3], [
+        ["#1 (area A)", "0.15", "0.60", "0.25"],
+        ["#2 (area B)", "0.02", "0.28", "0.70"],
+    ], header=["Building", "P(g1)", "P(g2)", "P(g3)"], row_h=0.45, size=13.5, first_bold=True,
+        align=[PP_ALIGN.LEFT] + [PP_ALIGN.CENTER] * 3)
+    d.arrow(s, 6.95 - 0.35, 3.1, 6.95, 3.1, color=ORANGE)
+    d.text(s, 0.6, 3.95, 12.1, 0.4, [[("Result: ", {"bold": True, "color": NAVY}),
+        ("an ID becomes 3 meaningful numbers, \u201chow badly was this neighbourhood hit?\u201d, for level 2 and level 3: 6 columns instead of thousands. ", {}),
+        ("(Illustrative areas.)", {"color": MUTED})]], size=13.5, color=INK2)
+    d.box(s, 0.6, 4.55, 5.9, 2.25)
+    d.text(s, 0.85, 4.68, 5.4, 0.35, "Safety 1: smoothing for small areas", size=15, bold=True, color=NAVY)
+    d.text(s, 0.85, 5.1, 5.45, 1.65, [
+        "An area with 3 buildings, all destroyed, has a raw grade-3 rate of 100%, but 3 buildings is weak evidence.",
+        f"Small areas are pulled toward the overall mix ({mix_txt}); unseen areas get exactly that mix.",
+    ], size=13, color=INK2, spacing=5)
+    d.box(s, 6.85, 4.55, 5.9, 2.25)
+    d.text(s, 7.1, 4.68, 5.4, 0.35, "Safety 2: cross-fitting, no peeking at the answer", size=15, bold=True, color=NAVY)
+    for j in range(5):
+        enc = j == 0
+        d.box(s, 7.1 + j * 1.08, 5.12, 0.98, 0.5, fill=ORANGE if enc else TINT, line=None if enc else LINE)
+        d.text(s, 7.1 + j * 1.08, 5.12, 0.98, 0.5, "encode" if enc else "learn", size=12, bold=enc,
+               color=WHITE if enc else INK2, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    d.text(s, 7.1, 5.75, 5.45, 1.0, "Training data split into 5 parts: each part is encoded with rates learned from the other 4, so no building's own grade is used in its own feature. Repeat for every part.",
+           size=13, color=INK2)
+    d.footer(s)
+    d.add_notes(s, "Highlight: target encoding explained", (
+        "Our first highlight is how we handled the fine location levels, so let us explain it with an example. "
+        "Every building has an area ID, but the ID is just a name: area 4523 is not bigger or more damaged than area 7. "
+        f"One-hot encoding would need {n(R.data['n_unique']['geo_level_2_id'] + R.data['n_unique']['geo_level_3_id'])} columns. "
+        "Target encoding takes a different approach: instead of the area's name, we give the model the area's damage history. "
+        "Look at the two illustrative areas on the left. In area A, 15 percent of buildings were grade 1, 60 percent grade 2 and 25 percent grade 3. In area B, 70 percent were destroyed. "
+        "Every building then receives its area's three rates, as in the table on the right. So the ID becomes three meaningful numbers that answer: how badly was this neighbourhood hit? "
+        "Two safety mechanisms make this reliable. First, smoothing: a tiny area with three buildings, all destroyed, would get a grade-3 rate of 100 percent, which is weak evidence, "
+        f"so small areas are pulled toward the overall mix of {mix_txt.replace(' / ', ', ')}. "
+        "Second, cross-fitting: if a building's own grade were used to compute its own feature, the feature would partly contain the answer. "
+        "So the training data is split into five parts, and each part is encoded using rates learned only from the other four."))
 
     # 7 ---------------------------------------------------------------- Highlight: target encoding
     s = d.new()
-    d.header(s, "Highlights · geo target encoding", f"Encoding {n(R.data['n_unique']['geo_level_3_id'])} villages as damage rates")
+    d.header(s, "Highlights · geo target encoding", "Target encoding gives the biggest jump of the project")
     d.box(s, 0.6, 1.75, 5.1, 4.95, fill=NAVY)
     d.text(s, 0.95, 2.0, 4.5, 0.4, "CV micro-F1", size=16, color=LIGHTBLUE, bold=True)
     for i, (k, lab) in enumerate([("E1", "structure only"), ("E2", "+ region (one-hot)"), ("E3", "+ target-encoded geo 2 & 3")]):
@@ -396,7 +579,7 @@ def build(rv: ResultsView):
         d.text(s, 0.95, y, 2.2, 0.7, f"{R.mic(k):.3f}", size=36, bold=True, color=ORANGE if k == "E3" else WHITE, font=HEAD)
         d.text(s, 3.05, y + 0.2, 2.5, 0.6, f"{k}: {lab}", size=14, color=WHITE)
     d.text(s, 0.95, 6.15, 4.5, 0.4, f"Target encoding alone: {pp(e3_gain)}", size=15, bold=True, color=ORANGE)
-    d.text(s, 6.2, 1.8, 6.5, 0.4, "How it works", size=18, bold=True, color=NAVY)
+    d.text(s, 6.2, 1.8, 6.5, 0.4, "Recap", size=18, bold=True, color=NAVY)
     d.box(s, 6.2, 2.3, 1.9, 1.0, fill=TINT)
     d.text(s, 6.3, 2.4, 1.7, 0.8, f"village id\n({n(R.data['n_unique']['geo_level_3_id'])} levels)", size=13, color=NAVY, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     d.arrow(s, 8.15, 2.8, 8.75, 2.8, color=ORANGE)
@@ -412,11 +595,8 @@ def build(rv: ResultsView):
     ], size=15, color=INK2, spacing=10)
     d.footer(s)
     d.add_notes(s, "Highlight: geo target encoding", (
-        f"Our first highlight is how we used location. The finest level has {n(R.data['n_unique']['geo_level_3_id'])} villages. One-hot encoding that would create thousands of sparse columns and overfit. "
-        "Instead, we used target encoding: each village is replaced by three numbers, its observed share of grade 1, 2 and 3 buildings, smoothed toward the overall mix when a village is small. "
-        "For example, a village with only three buildings, all destroyed, does not get a grade-3 rate of one hundred percent; its estimate is pulled toward the national average, because three buildings are weak evidence. "
-        "The danger with target encoding is leakage, because a building's own label would leak into its feature. "
-        "scikit-learn's TargetEncoder cross-fits internally, so a building's encoding is always computed from other buildings, and because it sits in our pipeline it is re-fitted inside every CV fold. "
+        "So does it work? On the left are three logistic-regression experiments with cross-validated micro-F1. "
+        "On the right is the short version of the mechanism we just described: compact, smoothed, leakage-safe and easy to interpret. "
         f"The effect is the biggest jump in the whole project. Structure alone gives {R.mic('E1'):.3f}; adding the region one-hot gives {R.mic('E2'):.3f}; "
         f"and the target-encoded villages take us to {R.mic('E3'):.3f}, a gain of {pp(e3_gain)} from this one idea. "
         "Intuitively, the model now knows how badly each neighbourhood was hit, which is exactly the information an inspector would ask for first. "
@@ -451,7 +631,7 @@ def build(rv: ResultsView):
         f"{'This is a negative result, but an informative one: ' if ord_diff <= 0.001 else ''}"
         "with only three classes the multinomial model is flexible enough to learn the ordering on its own. "
         f"We also tried class weighting. It {verdict_bal} macro-F1 by {pp(abs(bal_mac), 2).lstrip('+')} and raised grade-1 recall from {R.rec('E4', 1):.2f} to {R.rec('E5', 1):.2f}, "
-        f"but micro-F1 moved by {pp(bal_diff, 2)}. Macro-F1 does not improve either, because many grade-2 buildings are now wrongly called grade 1, so grade-1 precision collapses. "
+        f"but micro-F1 moved by {pp(bal_diff, 2)}. "
         "So weighting is a policy choice, not a free improvement."))
 
     # 9 ---------------------------------------------------------------- Training & testing
@@ -492,10 +672,8 @@ def build(rv: ResultsView):
         "Now, how we trained and tested. We split the labelled data 80 to 20, stratified by damage grade, "
         f"and locked the {n(R.split['n_holdout'])}-building holdout away until the very end. "
         "All comparisons and tuning used stratified five-fold cross-validation on the 80 percent, with every encoder re-fitted inside each fold. "
-        "Five-fold means we train five times, each time holding out a different fifth of the training data, and average the five scores. "
-        "That gives us both a mean and a spread, so we can tell a real improvement from noise, and it means we never need to look at the holdout while making decisions. "
+        "Five-fold means we train five times, each time holding out a different fifth, and average the scores, so we never need the holdout to make decisions. "
         f"For logistic regression we ran seven experiments and tuned C on the best one, {R.best}. "
-        "The random forest and gradient boosting reuse the same features and folds, with small tuning grids. "
         f"Each tuned model was scored once on the holdout, but the final model was chosen by cross-validation alone: {FL}. "
         "It was then refit on all labelled data for our submission."))
 
@@ -519,7 +697,6 @@ def build(rv: ResultsView):
         f"Adding the {R.data['n_unique']['geo_level_1_id']} regions gains {pp(geo1_gain)}, and the target-encoded village levels add another {pp(e3_gain)}, the largest single step. "
         f"Engineered features change micro-F1 by only {pp(fe_gain, 2)}. "
         f"The balanced and ordinal variants score {R.mic('E5'):.3f} and {R.mic('E6'):.3f}, which is why we carried E4 forward. "
-        f"Tuning the regularisation strength C barely mattered: the best value, {R.best_C:g}, is within a hair of the default, because with {n(R.split['n_train'])} training buildings the model is not starved of data. "
         f"The fold-to-fold standard deviations are tiny, at most {100 * max(R.mic_sd(k) for k in R.exp):.2f} percentage points, so the big steps are not noise. "
         "The lesson: building material matters, but only location tells a mud-stone house near the epicentre from one far away, and once location is in, hand-made features add almost nothing."))
 
@@ -547,11 +724,10 @@ def build(rv: ResultsView):
         "Now the comparison our course asked for: three models on exactly the same features and folds. "
         "A quick word on the two new models. A random forest grows many decision trees, each on a random sample of buildings and features, and lets them vote; averaging makes it stable. "
         "Gradient boosting instead grows trees one after another, each new tree correcting the mistakes of the trees before it. "
-        "Both can learn interactions and thresholds automatically, which logistic regression cannot do unless we hand-craft them. "
         f"Logistic regression reaches {R.mcv(LR):.3f} cross-validated micro-F1 and {R.mho(LR):.3f} on the holdout. "
         f"The random forest reaches {R.mcv(RF):.3f} and {R.mho(RF):.3f}, and HistGradientBoosting {R.mcv(HGB):.3f} and {R.mho(HGB):.3f}. "
         + (f"So {FL} is our final model, chosen on cross-validation only. Its gain over logistic regression is {pp(gain_cv, 2)} in cross-validation and {pp(gain_ho, 2)} on the holdout: "
-           "real and consistent, but small. The trees can combine features by themselves, for example a material that is only dangerous where shaking was strong. "
+           "real and consistent, but small. "
            + (f"The two tree models are practically tied: on the holdout the {R.label(R.final['runner_up']).lower()} is even {pp(R.mho(R.final['runner_up']) - R.mho(F), 2)} ahead, "
               "but we fixed in advance that cross-validation decides, so the holdout stays an honest check. "
               if R.mho(R.final["runner_up"]) > R.mho(F) else "")
@@ -584,8 +760,7 @@ def build(rv: ResultsView):
         f"close to its cross-validated {R.mcv(F):.3f}, so our model selection did not overfit. "
         f"Grade 2 is recalled {pct(R.mrec(F, 2), 0)} of the time and grade 3 {pct(R.mrec(F, 3), 0)}; grade 1 is hardest at {pct(R.mrec(F, 1), 0)}, because it is rare and often looks like grade 2. "
         "The grey numbers are logistic regression, for comparison. "
-        f"Importantly, mistakes are almost always between neighbouring grades: only {pct(R.fcm(3, 1), 1)} of destroyed buildings are mistaken for low damage, which is the costly error for inspectors. "
-        f"The biggest remaining error is grade-3 buildings predicted as grade 2, {pct(R.fcm(3, 2), 0)} of them: many destroyed buildings look ordinary on paper, and what tipped them over, such as local shaking, is not in the data."))
+        f"Importantly, mistakes are almost always between neighbouring grades: only {pct(R.fcm(3, 1), 1)} of destroyed buildings are mistaken for low damage, which is the costly error for inspectors."))
 
     # 13 --------------------------------------------------------------- Prioritisation
     s = d.new()
@@ -609,9 +784,7 @@ def build(rv: ResultsView):
         f"against 10, 20 and 30 percent for a random order. "
         f"The three curves almost overlap: at 20 percent, logistic regression finds {pct(R.mcap(LR), 1)}, the forest {pct(R.mcap(RF), 1)} and boosting {pct(R.mcap(HGB), 1)}. "
         f"Concretely, in our holdout the first {n(fa['at_fraction']['10']['n_inspected'])} visits would reach about {n(round(R.mcap(F, 10) * fa['n_grade3']))} destroyed buildings, "
-        f"instead of about {n(round(0.10 * fa['n_grade3']))} in random order. "
-        "The curve also shows diminishing returns: the first part of the list is rich in destroyed buildings, and after about half the list most remaining buildings are lower risk, "
-        "which helps an agency decide how many teams it needs in the first days."))
+        f"instead of about {n(round(0.10 * fa['n_grade3']))} in random order."))
 
     # 14 --------------------------------------------------------------- Interpretation
     up = R.top_features("raising", 3)
@@ -668,8 +841,7 @@ def build(rv: ResultsView):
         "The biggest technical contribution was leakage-safe target encoding of village-level location, which helps every model. "
         + (f"We compared three models fairly, and the trees beat logistic regression by {pp(gain_cv, 2)}, so transparency costs a little accuracy but not much. "
            if tree_won else "We compared three models fairly, and logistic regression held its own. ")
-        + "We were strict about methodology: every transformation is inside one pipeline, so nothing is learned from validation data, and each tuned model saw the holdout exactly once. "
-        "We also report the experiments that did not help, such as class weighting and the ordinal model, as honestly as the ones that did. "
+        + "Every transformation sits inside one pipeline, and each tuned model saw the holdout exactly once. "
         "Finally, the whole project, from the raw CSV files to the figures, the report and this deck, is reproducible with one command, "
         "and every number you have seen today is read automatically from a single results file."))
 
@@ -697,44 +869,38 @@ def build(rv: ResultsView):
         "instead of letting region ids act as a proxy. "
         "Second, interaction terms such as material by region could close the gap between logistic regression and the trees while staying interpretable. "
         "Third, SHAP values would give the tree models per-building explanations, so the more accurate model could also tell an inspector why a building is flagged. "
-        "A wider search, or libraries such as LightGBM or CatBoost, might add a little more accuracy. "
         "Fourth, decision thresholds should come from inspection capacity and from the cost of missing a destroyed building, and the probabilities should be calibrated so teams can trust the percentages. "
-        "Lastly, before deploying a triage tool, we would test the model with spatially grouped cross-validation, to see how it performs in areas it has never seen. "
         "Thank you for listening; we are happy to take questions."))
 
     return d
 
 
 def balanced_segments(words, k=N_PRESENTERS):
-    """Split slides 1..n into k contiguous segments with speaking times as equal as possible
-    (minimises the longest segment, ties broken by the smallest spread)."""
-    nsl = len(words)
+    """Split slides 1..n into k contiguous segments whose speaking times are as equal as
+    possible (minimises the sum of squared deviations from the equal share)."""
+    nsl, target = len(words), sum(words) / k
     pref = [0]
     for w in words:
         pref.append(pref[-1] + w)
-    best = {}
+    memo = {}
 
     def solve(i, parts):
-        # returns (max_segment, -min_segment, cuts) for slides i..n-1 split into `parts`
-        if (i, parts) in best:
-            return best[(i, parts)]
+        if (i, parts) in memo:
+            return memo[(i, parts)]
         if parts == 1:
-            seg = pref[nsl] - pref[i]
-            res = (seg, -seg, [nsl])
+            res = ((pref[nsl] - pref[i] - target) ** 2, [nsl])
         else:
             res = None
             for j in range(i + 1, nsl - parts + 2):
-                seg = pref[j] - pref[i]
-                mx, negmn, cuts = solve(j, parts - 1)
-                cand = (max(seg, mx), max(-seg, negmn), [j] + cuts)
-                if res is None or cand[:2] < res[:2]:
+                cost, cuts = solve(j, parts - 1)
+                cand = (cost + (pref[j] - pref[i] - target) ** 2, [j] + cuts)
+                if res is None or cand[0] < res[0]:
                     res = cand
-        best[(i, parts)] = res
+        memo[(i, parts)] = res
         return res
 
-    cuts = solve(0, k)[2]
     segs, start = [], 0
-    for c in cuts:
+    for c in solve(0, k)[1]:
         segs.append(list(range(start + 1, c + 1)))
         start = c
     return [(f"Presenter {i}", sl) for i, sl in enumerate(segs, 1)]
